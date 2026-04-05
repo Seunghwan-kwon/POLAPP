@@ -1,4 +1,4 @@
-# pol_app
+# POLAPP
 
 capston project named polapp
 
