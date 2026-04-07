@@ -29,8 +29,11 @@ flutter pub get
 3. Start the app:
 
 ```bash
-flutter run
+flutter run --dart-define=NAVER_MAP_CLIENT_ID=your_naver_map_client_id
 ```
+
+`NAVER_MAP_CLIENT_ID` is required for Naver Map initialization. Do not commit
+real client IDs or local `.env` files to this repository.
 
 ## Team Collaboration
 

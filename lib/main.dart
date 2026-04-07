@@ -3,7 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'pages/app_entry_page.dart';
 
 // Naver Map SDK 초기화에 사용하는 클라이언트 ID
-const String _naverMapClientId = '9nh2znn5h7';
+const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 
 Future<void> main() async {
   // runApp 전에 SDK 초기화가 필요하므로 Flutter 바인딩을 먼저 준비한다.
