@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
+import '../models/safety_status.dart';
+import 'setting_page.dart';
 
 // GPS 수신 지연 또는 실패 시 지도가 보여줄 기본 좌표 (광운대학교)
 const NLatLng _defaultTarget = NLatLng(37.6194, 127.0598);
@@ -44,6 +46,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 지도 로딩 상태 관리
   bool _isMapLoaded = false;
+  SafetyStatus _safetyStatus = SafetyStatus.waiting;
   
   // 네이버 지도 조작을 위한 컨트롤러 인스턴스
   NaverMapController? _mapController; 
@@ -137,6 +140,18 @@ class _MapHomePageState extends State<MapHomePage> {
     _mapController?.updateCamera(NCameraUpdate.zoomOut());
   }
 
+  void _nextSafetyStatus() {
+    setState(() {
+      _safetyStatus = _safetyStatus.next;
+    });
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const SettingPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -171,16 +186,45 @@ class _MapHomePageState extends State<MapHomePage> {
               padding: const EdgeInsets.all(16),
               child: Align(
                 alignment: Alignment.topLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(16),
+                child: GestureDetector(
+                  onTap: _isMapLoaded ? _nextSafetyStatus : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: (_isMapLoaded ? _safetyStatus.color : Colors.black).withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isMapLoaded ? _safetyStatus.icon : Icons.map_outlined,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isMapLoaded ? '상태 · ${_safetyStatus.label}' : '지도를 불러오는 중...',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Text(
-                    _isMapLoaded ? '주변 치안 정보' : '지도를 불러오는 중...',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
+                ),
+              ),
+            ),
+          ),
+
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Align(
+                alignment: Alignment.topRight,
+                child: FloatingActionButton.small(
+                  heroTag: 'btn_settings',
+                  onPressed: _openSettings,
+                  backgroundColor: Colors.white,
+                  child: const Icon(Icons.settings, color: Colors.black87),
                 ),
               ),
             ),
