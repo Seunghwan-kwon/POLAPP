@@ -30,7 +30,7 @@ class LoginPage extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Image.asset(
-                    'assets/icons/police_logo.png',
+                    'assets/icons/police_logo_1.png',
                     width: 140,
                     height: 140,
                   ),
