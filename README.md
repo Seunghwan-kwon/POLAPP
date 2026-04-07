@@ -1,6 +1,6 @@
 # POLAPP
 
-POLAPP is a Flutter-based team project for building a police-related application.
+POLAPP은 광운대학교 소프트웨어학부 졸업 작품 관련 프로그램으로, 대한민국 경찰 관련 어플리케이션이다.
 
 ## Project Structure
 
