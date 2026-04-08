@@ -3,6 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'pages/app_entry_page.dart';
 
 // Naver Map SDK 초기화에 사용하는 클라이언트 ID
+// 사용법 카카오톡 참고.
 const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 
 Future<void> main() async {

@@ -48,6 +48,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 지도 로딩 상태 관리
   bool _isMapLoaded = false;
+  bool _isVoiceRecognitionEnabled = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
 
   NaverMapController? _mapController;  // 네이버 지도 조작을 위한 컨트롤러 인스턴스
@@ -224,8 +225,17 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
+  void _toggleVoiceRecognition() {
+    setState(() {
+      _isVoiceRecognitionEnabled = !_isVoiceRecognitionEnabled;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -252,21 +262,26 @@ class _MapHomePageState extends State<MapHomePage> {
             ),
           ),
           
-          // 2. 좌측 상단: 현재 맵 로딩 상태 및 치안 정보 안내 오버레이
+          // 2. 좌측 상단: 현재 맵 로딩 상태 및 출동 상태 표시
+          // 우측 설정 버튼 및 음성 인식 On/Off 버튼
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: GestureDetector(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: GestureDetector(
                   onTap: _isMapLoaded ? _nextSafetyStatus : null,
-                  child: Container(
+                        child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: (_isMapLoaded ? _safetyStatus.color : Colors.black).withValues(alpha: 0.78),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Row(
+                          child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
@@ -275,29 +290,50 @@ class _MapHomePageState extends State<MapHomePage> {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        Flexible(
+                          child: Text(
                           _isMapLoaded ? '상태 · ${_safetyStatus.label}' : '지도를 불러오는 중...',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Align(
-                alignment: Alignment.topRight,
-                child: FloatingActionButton.small(
-                  heroTag: 'btn_settings',
-                  onPressed: _openSettings,
-                  backgroundColor: Colors.white,
-                  child: const Icon(Icons.settings, color: Colors.black87),
-                ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Padding(
+                    padding: EdgeInsets.only(top: isLandscape ? 150 : 0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FloatingActionButton.small(
+                          heroTag: 'btn_settings',
+                          onPressed: _openSettings,
+                          backgroundColor: Colors.white,
+                          child: const Icon(Icons.settings, color: Colors.black87),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'btn_voice_toggle',
+                          onPressed: _toggleVoiceRecognition,
+                          backgroundColor: _isVoiceRecognitionEnabled
+                              ? Colors.redAccent
+                              : Colors.white,
+                          child: Icon(
+                            _isVoiceRecognitionEnabled ? Icons.mic : Icons.mic_off,
+                            color: _isVoiceRecognitionEnabled
+                                ? Colors.white
+                                : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
