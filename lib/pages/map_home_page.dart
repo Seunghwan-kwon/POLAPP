@@ -48,6 +48,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 지도 로딩 상태 관리
   bool _isMapLoaded = false;
+  bool _isBriefingVisible = true;
   bool _isVoiceRecognitionEnabled = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
 
@@ -231,6 +232,12 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
+  void _toggleBriefingVisibility() {
+    setState(() {
+      _isBriefingVisible = !_isBriefingVisible;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isLandscape =
@@ -292,7 +299,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
-                          _isMapLoaded ? '상태 · ${_safetyStatus.label}' : '지도를 불러오는 중...',
+                          _isMapLoaded ? '${_safetyStatus.label}' : '지도를 불러오는 중...',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
@@ -339,6 +346,28 @@ class _MapHomePageState extends State<MapHomePage> {
           ),
 
           // 3. 우측 하단: 지도 줌 인/아웃 컨트롤 FAB (Floating Action Button) 영역
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16, top: 72),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: FloatingActionButton.small(
+                  heroTag: 'btn_briefing_toggle',
+                  onPressed: _toggleBriefingVisibility,
+                  backgroundColor: _isBriefingVisible
+                      ? const Color(0xFF2563EB)
+                      : Colors.white,
+                  child: Icon(
+                    _isBriefingVisible ? Icons.layers : Icons.layers_clear,
+                    color: _isBriefingVisible
+                        ? Colors.white
+                        : Colors.black87,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           Positioned(
             right: 16,
             bottom: 220, // 하단 DraggableScrollableSheet와 겹치지 않도록 높이 확보
@@ -362,7 +391,7 @@ class _MapHomePageState extends State<MapHomePage> {
           ),
 
           // 4. 최상단 하단 패널: 드래그 가능한 주변 정보 브리핑 시트
-          DraggableScrollableSheet(
+          if (_isBriefingVisible) DraggableScrollableSheet(
             initialChildSize: 0.18,
             minChildSize: 0.12,
             maxChildSize: 0.78,
@@ -413,6 +442,8 @@ class _MapHomePageState extends State<MapHomePage> {
       ),
     );
   }
+
+
 
   // 바텀 시트 상단의 브리핑 타이틀 영역 컴포넌트
   Widget _buildHeader(BuildContext context) {
