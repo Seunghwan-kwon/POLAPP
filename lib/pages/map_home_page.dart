@@ -1,3 +1,5 @@
+// ignore: library_prefixes
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
@@ -47,26 +49,87 @@ class _MapHomePageState extends State<MapHomePage> {
   // 지도 로딩 상태 관리
   bool _isMapLoaded = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
-  
-  // 네이버 지도 조작을 위한 컨트롤러 인스턴스
-  NaverMapController? _mapController; 
-  // 실시간 기기 위치 업데이트를 감지하는 스트림 구독 객체
-  StreamSubscription<Position>? _positionStream; 
-  // 현재 사용자의 위치를 지도 위에 표시하는 마커
-  NMarker? _myLocationMarker; 
+
+  NaverMapController? _mapController;  // 네이버 지도 조작을 위한 컨트롤러 인스턴스
+  StreamSubscription<Position>? _positionStream; // 실시간 기기 위치 업데이트를 감지하는 스트림 구독 객체
+  NMarker? _myLocationMarker; // 현재 사용자의 위치를 지도 위에 표시하는 마커
+
+  // 웹소켓 및 동료 마커 관리를 위한 변수
+  IO.Socket? _socket; // 서버와 통신할 소켓 객체
+  final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
+  final Map<String, NMarker> _colleagueMarkers = {}; // 다른 경찰관들의 마커를 관리할 딕셔너리
 
   @override
   void initState() {
     super.initState();
-    // 화면 로딩과 동시에 백그라운드에서 기기 위치 추적 시작
-    _startLocationTracking(); 
+    _startLocationTracking(); // 화면 로딩과 동시에 백그라운드에서 기기 위치 추적 시작
+    _connectWebSocket(); // 앱 동작 시 소켓 연결
   }
 
   @override
   void dispose() {
-    // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
-    _positionStream?.cancel();
+    _positionStream?.cancel(); // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
+    _socket?.dispose(); // 화면 종료 시 통신도 종료
     super.dispose();
+  }
+
+  // 웹소켓 연결 및 이벤트 리스너 설정
+  void _connectWebSocket() {
+    // 1. 서버 주소 설정 (나중에 실제 IP/포트로 변경해야 함)
+    final String serverUrl = 'http://192.168.0.10:3000'; 
+
+    _socket = IO.io(serverUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': false,
+    });
+
+    // 2. 서버 연결 성공 시 내가 접속했다는 사실을 서버에 알림
+    _socket?.onConnect((_) {
+      debugPrint('웹소켓 서버 연결 성공!');
+      _socket?.emit('join', {'officerId': _myOfficerId});
+    });
+
+    // 서버 연결 실패 시 에러 로그 출력
+    _socket?.onConnectError((error) => debugPrint('웹소켓 연결 에러: $error'));
+
+    // 3. 서버로부터 다른 경찰관의 위치 데이터를 수신했을 때
+    _socket?.on('updateColleagueLocation', (data) {
+      debugPrint('동료 위치 수신: $data');
+
+      final String officerId = data['officerId'].toString();
+      final double lat = (data['latitude'] as num).toDouble();
+      final double lng = (data['longitude'] as num).toDouble();
+      
+      _updateColleagueMarker(officerId, NLatLng(lat, lng));
+    });
+
+    // 4. 서버와 연결이 끊겼을 때
+    _socket?.onDisconnect((_) => debugPrint('웹소켓 연결 끊김'));
+
+    // 세팅 완료 후 연결 시작
+    _socket?.connect();
+  }
+
+  // 동료 마커를 지도에 갱신하는 함수
+  void _updateColleagueMarker(String officerId, NLatLng latLng) {
+    if (_mapController == null || officerId == _myOfficerId) return;
+
+    setState(() {
+      if (_colleagueMarkers.containsKey(officerId)) {
+        // 이미 지도에 있는 동료면 위치만 이동
+        _colleagueMarkers[officerId]!.setPosition(latLng);
+      } else {
+        // 처음 보는 동료면 새로운 마커 생성해서 지도에 추가
+        final newMarker = NMarker(
+          id: officerId, 
+          position: latLng,
+          iconTintColor: Colors.blue, // 내 마커와 색상으로 구분 (파란색)
+          caption: NOverlayCaption(text: officerId), // 마커 아래에 ID 표시
+        );
+        _colleagueMarkers[officerId] = newMarker;
+        _mapController!.addOverlay(newMarker);
+      }
+    });
   }
 
   // 기기의 위치 권한을 확인하고, 실시간 위치 추적을 초기화하는 메서드
@@ -126,6 +189,15 @@ class _MapHomePageState extends State<MapHomePage> {
       animation: isInitial ? NCameraAnimation.none : NCameraAnimation.easing, 
       duration: isInitial ? Duration.zero : const Duration(milliseconds: 300),
     );
+
+    // 내 위치가 지도에 갱신될 때마다 서버에 전송
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('sendMyLocation', {
+        'officerId': _myOfficerId,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+      });
+    }
     
     _mapController!.updateCamera(cameraUpdate);
   }
@@ -354,8 +426,6 @@ class _MapHomePageState extends State<MapHomePage> {
     await controller.addOverlay(marker);
   }
 }
-
-// ─── 데이터 모델 및 리스트 아이템 UI 컴포넌트 ───
 
 // 바텀 시트 내부 리스트에 표시될 개별 장소 카드 위젯
 class _PlaceCard extends StatelessWidget {

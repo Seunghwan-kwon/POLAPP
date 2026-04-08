@@ -13,6 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_naver_map: ^1.4.4
   geolocator: ^14.0.2
+  socket_io_client: ^3.1.4
 
 dev_dependencies:
   flutter_test:
