@@ -10,6 +10,49 @@ import 'setting_page.dart';
 // GPS 수신 지연 또는 실패 시 지도가 보여줄 기본 좌표 (광운대학교)
 const NLatLng _defaultTarget = NLatLng(37.6194, 127.0598);
 
+const List<_PoliceFacility> _policeFacilities = [
+  _PoliceFacility(
+    id: 'danghyeon-substation',
+    name: '당현지구대',
+    position: NLatLng(37.642015382, 127.068353531),
+  ),
+  _PoliceFacility(
+    id: 'nowon-police-station',
+    name: '서울노원경찰서',
+    position: NLatLng(37.642363712, 127.071869314),
+  ),
+  _PoliceFacility(
+    id: 'wolgye-substation',
+    name: '월계지구대',
+    position: NLatLng(37.633686403, 127.059291071),
+  ),
+  _PoliceFacility(
+    id: 'hwarang-substation',
+    name: '화랑지구대',
+    position: NLatLng(37.622565919, 127.074597621),
+  ),
+  _PoliceFacility(
+    id: 'nowon-station-substation',
+    name: '노원역지구대',
+    position: NLatLng(37.655005234, 127.066916346),
+  ),
+  _PoliceFacility(
+    id: 'buram-substation',
+    name: '불암지구대',
+    position: NLatLng(37.652435036, 127.077340403),
+  ),
+  _PoliceFacility(
+    id: 'madeul-substation',
+    name: '마들지구대',
+    position: NLatLng(37.664587019, 127.063618904),
+  ),
+  _PoliceFacility(
+    id: 'sanggye1-box',
+    name: '상계1파출소',
+    position: NLatLng(37.679681255, 127.055047182),
+  ),
+];
+
 class MapHomePage extends StatefulWidget {
   const MapHomePage({super.key});
 
@@ -72,6 +115,7 @@ class _MapHomePageState extends State<MapHomePage> {
   void dispose() {
     _positionStream?.cancel(); // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
     _socket?.dispose(); // 화면 종료 시 통신도 종료
+    _policeFacilityBlinkTimer?.cancel();
     super.dispose();
   }
 
@@ -484,13 +528,93 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   // 맵 컨트롤러가 준비된 직후 호출되는 콜백. 초기 데이터 렌더링을 담당.
+  final Map<String, NMarker> _policeFacilityMarkers = {};
+  Timer? _policeFacilityBlinkTimer;
+  bool _isPoliceFacilityDimmed = false;
+  int _remainingBlinkTicks = 0;
+
   Future<void> _onMapReady(NaverMapController controller) async {
-    final marker = NMarker(
-      id: 'city-hall',
-      position: _defaultTarget,
-      caption: const NOverlayCaption(text: 'POL APP'),
+    final policeFacilityIcon = await _buildPoliceFacilityIcon();
+    _policeFacilityMarkers.clear();
+
+    for (final facility in _policeFacilities) {
+      final marker = NMarker(
+        id: facility.id,
+        position: facility.position,
+        icon: policeFacilityIcon,
+        size: const Size(30, 30),
+      );
+      marker.setOnTapListener((overlay) {
+        _onPoliceFacilityTap(facility);
+      });
+      _policeFacilityMarkers[facility.id] = marker;
+      await controller.addOverlay(marker);
+    }
+  }
+
+  Future<NOverlayImage> _buildPoliceFacilityIcon() {
+    return NOverlayImage.fromWidget(
+      context: context,
+      size: const Size(52, 52),
+      widget: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1D4ED8),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.local_police_rounded,
+          color: Colors.white,
+          size: 28,
+        ),
+      ),
     );
-    await controller.addOverlay(marker);
+  }
+
+  void _onPoliceFacilityTap(_PoliceFacility facility) {
+    _startPoliceFacilityBlinking(facility.id);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${facility.name} 선택됨'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+  }
+
+  void _startPoliceFacilityBlinking(String facilityId) {
+    _policeFacilityBlinkTimer?.cancel();
+    _remainingBlinkTicks = 6;
+    _isPoliceFacilityDimmed = false;
+
+    final activeMarker = _policeFacilityMarkers[facilityId];
+    if (activeMarker == null) return;
+
+    activeMarker.setAlpha(1.0);
+
+    _policeFacilityBlinkTimer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (timer) {
+        _isPoliceFacilityDimmed = !_isPoliceFacilityDimmed;
+        activeMarker.setAlpha(_isPoliceFacilityDimmed ? 0.35 : 1.0);
+        _remainingBlinkTicks--;
+
+        if (_remainingBlinkTicks <= 0) {
+          activeMarker.setAlpha(1.0);
+          timer.cancel();
+        }
+      },
+    );
   }
 }
 
@@ -538,4 +662,16 @@ class _PlacePreview {
   });
   
   final String name, category, distance, description;
+}
+
+class _PoliceFacility {
+  const _PoliceFacility({
+    required this.id,
+    required this.name,
+    required this.position,
+  });
+
+  final String id;
+  final String name;
+  final NLatLng position;
 }
