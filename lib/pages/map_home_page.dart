@@ -77,8 +77,8 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 웹소켓 연결 및 이벤트 리스너 설정
   void _connectWebSocket() {
-    // 1. 서버 주소 설정 (나중에 실제 IP/포트로 변경해야 함)
-    final String serverUrl = 'http://192.168.0.10:3000'; 
+    // 1. 서버 주소 설정
+    final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
 
     _socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
@@ -299,7 +299,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
-                          _isMapLoaded ? '${_safetyStatus.label}' : '지도를 불러오는 중...',
+                          _isMapLoaded ? _safetyStatus.label : '지도를 불러오는 중...',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
