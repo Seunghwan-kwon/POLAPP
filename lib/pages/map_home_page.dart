@@ -21,16 +21,41 @@ class MapHomePage extends StatefulWidget {
   State<MapHomePage> createState() => _MapHomePageState();
 }
 
+class RadioMessage {
+  final String officerId;
+  final String region;
+  final String message;
+  final DateTime timestamp;
+
+  RadioMessage({
+    required this.officerId,
+    required this.region,
+    required this.message,
+    required this.timestamp,
+  });
+
+  // 서버에서 받은 JSON을 객체로 변환
+  factory RadioMessage.fromJson(Map<String, dynamic> json) {
+    return RadioMessage(
+      officerId: json['officerId'],
+      region: json['region'] ?? 'UNKNOWN', 
+      message: json['message'],
+      timestamp: DateTime.parse(json['timestamp']),
+    );
+  }
+}
+
 // 지도의 초기 카메라 시점 설정
 class _MapHomePageState extends State<MapHomePage> {
   static const NCameraPosition _initialCameraPosition = NCameraPosition(
     target: _defaultTarget,
     zoom: 15,
   );
-  // 지도 로딩 상태 관리
+
   bool _isMapLoaded = false;
   bool _isBriefingVisible = false;
   bool _isVoiceRecognitionEnabled = false;
+  bool _isRadioDialogOpen = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
 
   NaverMapController? _mapController; // 네이버 지도 조작을 위한 컨트롤러 인스턴스
@@ -42,6 +67,9 @@ class _MapHomePageState extends State<MapHomePage> {
   final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
+
+  // 메시지 내역을 저장할 리스트
+  List<RadioMessage> _radioLogs = [];
 
   @override
   void initState() {
@@ -60,7 +88,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
 // 웹소켓 연결 및 이벤트 리스너 설정
   void _connectWebSocket() {
-    // 1. 서버 주소 설정
+    // 서버 주소 설정
     final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
 
     _socket = IO.io(serverUrl, <String, dynamic>{
@@ -68,10 +96,13 @@ class _MapHomePageState extends State<MapHomePage> {
       'autoConnect': false,
     });
 
-    // 2. 서버 연결 성공 시 내가 접속했다는 사실을 서버에 알림
+    // 서버 연결 성공 시 내가 접속했다는 사실을 서버에 알림
     _socket?.onConnect((_) {
       debugPrint('WebSocket connected');
-      _socket?.emit('join', {'officerId': _myOfficerId});
+      _socket?.emit('join', {
+        'officerId': _myOfficerId,
+        'region': 'SEOUL_NOWON' // 관할 지역 추가
+      });
     });
 
     // 서버 연결 실패 시 에러 로그 출력
@@ -79,7 +110,7 @@ class _MapHomePageState extends State<MapHomePage> {
       (error) => debugPrint('WebSocket connect error: $error'),
     );
 
-    // 3. 서버로부터 다른 경찰관의 위치 데이터를 수신했을 때
+    // 서버로부터 다른 경찰관의 위치 데이터를 수신했을 때
     _socket?.on('updateColleagueLocation', (data) {
       final String officerId = data['officerId'].toString();
       final double lat = (data['latitude'] as num).toDouble();
@@ -87,11 +118,35 @@ class _MapHomePageState extends State<MapHomePage> {
       _updateColleagueMarker(officerId, NLatLng(lat, lng));
     });
 
-    // 4. 서버와 연결이 끊겼을 때
+    // 서버로부터 다른 경찰관의 메시지를 수신했을 때
+    _socket?.on('receiveRadioMessage', (data) {
+      // 현재 맵 화면이 띄워져 있을 때만 UI 업데이트를 진행
+      if (!mounted) return; 
+
+      final newMessage = RadioMessage.fromJson(data);
+      
+      setState(() {
+        _radioLogs.insert(0, newMessage); // 최신 메시지가 위로 오게 저장
+      });
+
+      // 팝업 알림 띄우기 (ScaffoldMessenger 사용)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("[${newMessage.region}] ${newMessage.officerId}: ${newMessage.message}"),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating, // 지도 위로 띄우기
+          margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20), // 위치 조정
+        ),
+      );
+    });
+
+    // 서버와 연결이 끊겼을 때
     _socket?.onDisconnect((_) => debugPrint('WebSocket disconnected'));
+
     // 세팅 완료 후 연결 시작
     _socket?.connect();
   }
+
 // 동료 마커를 지도에 갱신하는 함수
   void _updateColleagueMarker(String officerId, NLatLng latLng) {
     if (_mapController == null || officerId == _myOfficerId) return;
@@ -179,6 +234,79 @@ class _MapHomePageState extends State<MapHomePage> {
     }
 
     _mapController!.updateCamera(cameraUpdate);
+  }
+
+  // 메시지를 서버로 전송하는 함수
+  void _sendRadioMessage(String text) {
+    if (text.trim().isEmpty) return; // 빈 메시지 방지
+
+    if (_socket != null && _socket!.connected) {
+      final messageData = {
+        'officerId': _myOfficerId,
+        'region': 'SEOUL_NOWON',
+        'message': text,
+        'timestamp': DateTime.now().toIso8601String(), // 현재 시간을 표준 문자열로 변환
+      };
+      
+      _socket!.emit('sendRadioMessage', messageData);
+      debugPrint('메시지 전송 완료: $text');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('서버와 연결되어 있지 않습니다.')),
+      );
+    }
+  }
+
+  // 메시지 입력창을 띄우는 함수
+  void _showRadioDialog() {
+    setState(() {
+      _isRadioDialogOpen = true; 
+    });
+    
+    final TextEditingController messageController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.campaign, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('전체 메시지 전파', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: TextField(
+            controller: messageController,
+            decoration: const InputDecoration(
+              hintText: '전파할 내용을 입력하세요.',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true, // 창이 뜨자마자 키보드 올라오게 설정
+            maxLines: 2,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+              onPressed: () {
+                _sendRadioMessage(messageController.text);
+                Navigator.pop(context); // 전송 후 창 닫기
+              },
+              child: const Text('전파하기', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      // 전송, 취소, 혹은 바깥 화면 터치로 창이 닫히면 무조건 실행
+      setState(() {
+        _isRadioDialogOpen = false; // 창이 닫히면 다시 하얀색으로 복구
+      });
+    });
   }
 
   // 지도를 한 단계 확대하는 외부 컨트롤 메서드
@@ -349,6 +477,16 @@ class _MapHomePageState extends State<MapHomePage> {
                             color: _isVoiceRecognitionEnabled
                                 ? Colors.white
                                 : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'btn_radio',
+                          onPressed: _showRadioDialog,
+                          backgroundColor: _isRadioDialogOpen ? Colors.blueAccent : Colors.white,
+                          child: Icon(
+                            Icons.campaign,
+                            color: _isRadioDialogOpen ? Colors.white : Colors.black87,
                           ),
                         ),
                       ],
