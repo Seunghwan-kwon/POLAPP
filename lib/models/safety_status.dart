@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+// 경찰관 상태 정보
+// 백엔드 구현 필요 페이지
+
 enum SafetyStatus {
   waiting,
   patrol,

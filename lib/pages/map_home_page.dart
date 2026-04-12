@@ -6,9 +6,11 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
+import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
 import '../models/safety_status.dart';
 import '../services/police_marker_service.dart';
+import 'map_bottom_panel.dart';
 import 'setting_page.dart';
 
 // GPS 수신 지연 또는 실패 시 지도가 보여줄 기본 좌표 (광운대학교)
@@ -57,6 +59,12 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _isVoiceRecognitionEnabled = false;
   bool _isRadioDialogOpen = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
+  PoliceFacility? _selectedFacility;
+
+  static const OfficerProfile _officerProfile = OfficerProfile(
+    name: '홍길동',
+    rank: '순경',
+  );
 
   NaverMapController? _mapController; // 네이버 지도 조작을 위한 컨트롤러 인스턴스
   StreamSubscription<Position>? _positionStream;  // 실시간 기기 위치 업데이트를 감지하는 스트림 구독 객체
@@ -353,6 +361,11 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   void _onPoliceFacilityTap(PoliceFacility facility) {
+    setState(() {
+      _selectedFacility = facility;
+      _isBriefingVisible = true;
+    });
+
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -546,32 +559,11 @@ class _MapHomePageState extends State<MapHomePage> {
               snap: true,
               snapSizes: const [0.18, 0.42, 0.78],
               builder: (context, scrollController) {
-                return DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(28)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x26000000),
-                        blurRadius: 20,
-                        offset: Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      Container(
-                        width: 44,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFD4D9E2),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ],
-                  ),
+                return MapBottomPanel(
+                  scrollController: scrollController,
+                  officerProfile: _officerProfile,
+                  status: _safetyStatus,
+                  selectedFacility: _selectedFacility,
                 );
               },
             ),
