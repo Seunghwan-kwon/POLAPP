@@ -1,7 +1,5 @@
 import bcrypt from"bcrypt";
-import{PoolConnection,RowDataPacket}from"mysql2/promise";
-import{getDbConnection}from"./db.js";
-import SQLHelper from"./SQLHelper.js";
+import DBConnection from"./DBConnection.js";
 enum UserCreateResultCode{
 	Success=0,
 	Exception1=-1,
@@ -14,9 +12,6 @@ class UserCreateResult{
 	constructor(){
 		this.code=UserCreateResultCode.Success;
 		this.userId=null;
-	}
-	setCode(code:UserCreateResultCode){
-		this.code=code;
 	}
 }
 enum UserLoginResultCode{
@@ -35,11 +30,8 @@ class UserLoginResult{
 		this.code=UserLoginResultCode.Success;
 		this.userId=null;
 	}
-	setCode(code:UserLoginResultCode){
-		this.code=code;
-	}
 }
-interface UserRow extends RowDataPacket{
+interface UserRow{
 	id:number,
 	passwordHash:string
 }
@@ -54,35 +46,28 @@ class UserRemoveResult{
 	constructor(){
 		this.code=UserRemoveResultCode.Success;
 	}
-	setCode(code:UserRemoveResultCode){
-		this.code=code;
-	}
 }
 export default class User{
-	static async remove(userId:number,updatedBy:number):Promise<UserRemoveResult>{
-		let conn:PoolConnection|null=null;
+	static async remove(conn:DBConnection,userId:number,updatedBy:number):Promise<UserRemoveResult>{
 		const result=new UserRemoveResult();
 		try{
-			conn=await getDbConnection();
 			await conn.beginTransaction();
-			const historyId=await SQLHelper.insert(
+			const historyId=await conn.insert(
 				"insert into tblUserHistory(userId,email,passwordHash)select id,email,passwordHash from tblUser where id=? limit 1;",
-				conn,
 				[userId]
 			);
 			if(historyId==null){
 				await conn.rollback();
-				result.setCode(UserRemoveResultCode.HistoryInsertFailed);
+				result.code=UserRemoveResultCode.HistoryInsertFailed;
 				return result;
 			}
-			const changedCount=await SQLHelper.execute(
+			const changedCount=await conn.update(
 				"delete from tblUser where id=?;",
-				conn,
 				[userId]
 			);
 			if(changedCount!==1){
 				await conn.rollback();
-				result.setCode(UserRemoveResultCode.DeleteFailed);
+				result.code=UserRemoveResultCode.DeleteFailed;
 				return result;
 			}
 			await conn.commit();
@@ -91,36 +76,37 @@ export default class User{
 			try{
 				await conn?.rollback();
 			}catch{}
-			result.setCode(UserRemoveResultCode.Exception1);
+			result.code=UserRemoveResultCode.Exception1;
 			return result;
 		}finally{
 			conn?.release();
 		}
 	}
-	static async login(email:string,password:string):Promise<UserLoginResult>{
-		let conn:PoolConnection|null=null;
-		let sql:string;
-		let result=new UserLoginResult();
+	static async login(conn:DBConnection,email:string,password:string):Promise<UserLoginResult>{
+		const result=new UserLoginResult();
 		try{
-			conn=await getDbConnection();
-			sql="select id,passwordHash from tblUser where email=? and isActive=1 limit 1;";
-			const userRow=await SQLHelper.selectRow<UserRow>(sql,conn,[email]);
+			const userRow=await conn.selectRow<UserRow>(
+				"select id,passwordHash from tblUser where email=? and isActive=1 limit 1;",
+				[email]
+			);
 			if(userRow==null){
 				await conn.rollback();
-				result.setCode(UserLoginResultCode.NoSuchUser);
+				result.code=UserLoginResultCode.NoSuchUser;
 				return result;
 			}
 			const passwordMatched=await bcrypt.compare(password,userRow.passwordHash);
 			if(!passwordMatched){
 				await conn.rollback();
-				result.setCode(UserLoginResultCode.PasswordMismatch);
+				result.code=UserLoginResultCode.PasswordMismatch;
 				return result;
 			}
-			sql="insert into tblLoginLog(userId,method)values(?,1);";
-			const insertId:number|null=await SQLHelper.insert(sql,conn,[userRow.id]);
+			const insertId=await conn.insert(
+				"insert into tblLoginLog(userId,method)values(?,1);",
+				[userRow.id]
+			);
 			if(insertId==null){
 				await conn.rollback();
-				result.setCode(UserLoginResultCode.LogInsertFailed);
+				result.code=UserLoginResultCode.LogInsertFailed;
 				return result;
 			}
 			result.userId=userRow.id;
@@ -130,22 +116,21 @@ export default class User{
 			try{
 				await conn?.rollback();
 			}catch{}
-			result.setCode(UserLoginResultCode.Exception1);
+			result.code=UserLoginResultCode.Exception1;
 			return result;
 		}finally{
 			conn?.release();
 		}
 	}
-	static async create(email:string,password:string,createdBy:number,name:string):Promise<UserCreateResult>{
-		const result:UserCreateResult=new UserCreateResult();
-		let conn:PoolConnection|null=null;
-		let sql:string;
+	static async create(conn:DBConnection,email:string,password:string,createdBy:number,name:string):Promise<UserCreateResult>{
+		const result=new UserCreateResult();
 		try{
-			conn=await getDbConnection();
 			await conn.beginTransaction();
 			const passwordHash=await bcrypt.hash(password,12);
-			sql="insert into tblUser(email,passwordHash,createdBy)values(?,?,?);";
-			const userId:number=await SQLHelper.insert(sql,conn,[email,passwordHash,createdBy]);
+			const userId=await conn.insert(
+				"insert into tblUser(email,passwordHash,createdBy)values(?,?,?);",
+				[email,passwordHash,createdBy]
+			);
 			if(userId==null){
 				await conn.rollback();
 				return result;
@@ -157,7 +142,7 @@ export default class User{
 			try{
 				await conn?.rollback();
 			}catch{}
-			result.setCode(UserCreateResultCode.Exception1);
+			result.code=UserCreateResultCode.Exception1;
 			return result;
 		}finally{
 			conn?.release();

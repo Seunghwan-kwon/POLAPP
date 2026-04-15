@@ -1,6 +1,4 @@
-import{PoolConnection}from"mysql2/promise";
-import{getDbConnection}from"./db.js";
-import SQLHelper from"./SQLHelper.js";
+import DBConnection from"./DBConnection.js";
 enum CaseSetCompleteResultCode{
 	Success=0,
 	Exception1=-1,
@@ -17,12 +15,6 @@ class CaseSetCompleteResult{
 		this.code=CaseSetCompleteResultCode.Success;
 		this.logId=-1;
 	}
-	setCode(code:CaseSetCompleteResultCode){
-		this.code=code;
-	}
-	setLogId(logId:number){
-		this.logId=logId;
-	}
 }
 enum AssignPoliceResultCode{
 	Success=0,
@@ -33,9 +25,6 @@ class AssignPoliceResult{
 	code:AssignPoliceResultCode;
 	constructor(){
 		this.code=AssignPoliceResultCode.Success;
-	}
-	setCode(code:AssignPoliceResultCode){
-		this.code=code;
 	}
 }
 export enum GetOfficerIdsResultCode{
@@ -53,15 +42,11 @@ class GetOfficerIdsResult{
 export default class Case{
 	static async create(createdBy:number){
 	}
-	static async getOfficerIds(caseId:number){
-		let conn:PoolConnection|null=null;
-		let sql:string;
-		let result:GetOfficerIdsResult=new GetOfficerIdsResult();
+	static async getOfficerIds(conn:DBConnection,caseId:number){
+		const result=new GetOfficerIdsResult();
 		try{
-			conn=await getDbConnection();
-			const rows=await SQLHelper.selectAll(
+			const rows=await conn.selectAll<any>(
 				"select id from tblCasePolice where caseId=?;",
-				conn,
 				[caseId]
 			);
 			for(const row of rows){
@@ -72,84 +57,71 @@ export default class Case{
 			result.code=GetOfficerIdsResultCode.Exception1;
 			return result;
 		}finally{
-			if(conn!=null){
-				conn.release();
-			}
+			conn?.release();
 		}
 	}
-	static async assignPolice(caseId:number,policeId:number,updatedBy:number):Promise<AssignPoliceResult>{
-		let conn:PoolConnection|null=null;
-		let sql:string;
-		let result:AssignPoliceResult=new AssignPoliceResult();
+	static async assignPolice(conn:DBConnection,caseId:number,policeId:number,updatedBy:number):Promise<AssignPoliceResult>{
+		const result=new AssignPoliceResult();
 		try{
-			conn=await getDbConnection();
-			sql="insert into tblCasePolice(caseId,policeId,updatedBy)values(?,?,?);";
-			const affectedCount=await SQLHelper.execute(sql,conn,[caseId,policeId,updatedBy]);
-			if(affectedCount!=1){
-				result.setCode(AssignPoliceResultCode.InsertFailed);
+			const insertId=await conn.insert(
+				"insert into tblCasePolice(caseId,policeId,updatedBy)values(?,?,?);",
+				[caseId,policeId,updatedBy]
+			);
+			if(insertId==null){
+				result.code=AssignPoliceResultCode.InsertFailed;
 				return result;
 			}
 			return result;
 		}catch(ex){
-			result.setCode(AssignPoliceResultCode.Exception1);
+			result.code=AssignPoliceResultCode.Exception1;
 			return result;
 		}finally{
-			if(conn!=null){
-				conn.release();
-			}
+			conn?.release();
 		}
 	}
 	static async setIncomplete(caseId:number,updatedBy:number){
 	}
-	static async setComplete(caseId:number,updatedBy:number):Promise<CaseSetCompleteResult>{
-		let conn:PoolConnection|null=null;
-		let sql:string;
-		let result:CaseSetCompleteResult=new CaseSetCompleteResult();
+	static async setComplete(conn:DBConnection,caseId:number,updatedBy:number):Promise<CaseSetCompleteResult>{
+		const result=new CaseSetCompleteResult();
 		try{
-			conn=await getDbConnection();
-			sql="select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;";
-			const hasPermission:number|null=await SQLHelper.selectSingle<number>(sql,conn,[updatedBy]);
+			const hasPermission=await conn.selectSingle<number>(
+				"select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;",
+				[updatedBy]
+			);
 			if(hasPermission==null){
 				await conn.rollback();
-				result.setCode(CaseSetCompleteResultCode.PermissionDenied);
+				result.code=CaseSetCompleteResultCode.PermissionDenied;
 				return result;
 			}
-			sql="update tblCase set state=200 where id=? and state=0;";
-			let affectedCount:number;
-			affectedCount=await SQLHelper.execute(sql,conn,[caseId]);
+			const affectedCount=await conn.update(
+				"update tblCase set state=200 where id=? and state=0;",
+				[caseId]
+			);
 			if(affectedCount!=1){
 				await conn.rollback();
-				result.setCode(CaseSetCompleteResultCode.CaseUpdateFailed);
+				result.code=CaseSetCompleteResultCode.CaseUpdateFailed;
 				return result;
 			}
-			sql="insert tblCaseLog(caseId,updatedBy)values(?,?);";
-			const logId:number=await SQLHelper.insert(sql,conn,[caseId,updatedBy]);
+			const logId=await conn.insert(
+				"insert tblCaseLog(caseId,updatedBy)values(?,?);",
+				[caseId,updatedBy]
+			);
 			if(logId==null){
 				await conn.rollback();
-				result.setCode(CaseSetCompleteResultCode.LogInsertFailed);
+				result.code=CaseSetCompleteResultCode.LogInsertFailed;
 				return result;
 			}
 			await conn.commit();
-			result.setLogId(logId);
+			result.logId=logId;
 			return result;
 		}catch(ex1){
-			if(conn!=null){
-				try{
-					await conn.rollback();
-					result.setCode(CaseSetCompleteResultCode.Exception1);
-					return result;
-				}catch(ex2){
-					result.setCode(CaseSetCompleteResultCode.Exception2);
-					return result;
-				}
-			}else{
-				result.setCode(CaseSetCompleteResultCode.DBConnFailed);
-				return result;
-			}
+			try{
+				await conn.rollback();
+			}catch{}
+			result.code=CaseSetCompleteResultCode.Exception1;
+			return result;
 		}finally{
-			if(conn!=null){
-				conn.release();
-			}
+			conn?.release();
 		}
 	}
 }

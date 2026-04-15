@@ -1,0 +1,74 @@
+import sqlite3 from"sqlite3";
+import DBConnection,{QueryParams}from"./DBConnection.js";
+export default class SqliteConnection extends DBConnection{
+	db:sqlite3.Database;
+	constructor(db:sqlite3.Database){
+		super();
+		this.db=db;
+	}
+	insert(sql:string,params:QueryParams=[]):Promise<number>{
+		const db=this.db;
+		return new Promise((resolve,reject)=>{
+			db.run(sql,params,function(this:sqlite3.RunResult,err:Error|null){
+				if(err){
+					reject(err);
+					return;
+				}
+				resolve(this.lastID);
+			});
+		});
+	}
+	update(sql:string,params:QueryParams=[]):Promise<number>{
+		const db=this.db;
+		return new Promise((resolve,reject)=>{
+			db.run(sql,params,function(this:sqlite3.RunResult,err:Error|null){
+				if(err){
+					reject(err);
+					return;
+				}
+				resolve(this.changes);
+			});
+		});
+	}
+	selectSingle<T>(sql:string,params:QueryParams=[]):Promise<T|null>{
+		const db=this.db;
+		return new Promise((resolve,reject)=>{
+			db.get(sql,params,(err:Error|null,row?:Record<string,unknown>)=>{
+				if(err){
+					reject(err);
+					return;
+				}
+				if(!row){
+					resolve(null);
+					return;
+				}
+				const firstValue=Object.values(row)[0]as T|undefined;
+				resolve(firstValue??null);
+			});
+		});
+	}
+	selectRow<T>(sql:string,params:QueryParams=[]):Promise<T|null>{
+		const db=this.db;
+		return new Promise((resolve,reject)=>{
+			db.get(sql,params,(err:Error|null,row?:T)=>{
+				if(err){
+					reject(err);
+					return;
+				}
+				resolve(row??null);
+			});
+		});
+	}
+	selectAll<T>(sql:string,params:QueryParams=[]):Promise<T[]>{
+		const db=this.db;
+		return new Promise((resolve,reject)=>{
+			db.get(sql,params,(err:Error|null,rows?:T[])=>{
+				if(err){
+					reject(err);
+					return;
+				}
+				resolve(rows??[]);
+			});
+		});
+	}
+}

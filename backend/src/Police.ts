@@ -1,6 +1,4 @@
-import{PoolConnection}from"mysql2/promise";
-import{getDbConnection}from"./db.js";
-import SQLHelper from"./SQLHelper.js";
+import DBConnection from"./DBConnection.js";
 enum RemovePoliceResultCode{
 	Success=0,
 	Exception1=-1,
@@ -54,14 +52,11 @@ class GetPoliceIdResult{
 	}
 }
 export default class Police{
-	static async getPoliceId(officerId:string):Promise<GetPoliceIdResult>{
-		let conn:PoolConnection|null=null;
+	static async getPoliceId(conn:DBConnection,officerId:string):Promise<GetPoliceIdResult>{
 		const result=new GetPoliceIdResult();
 		try{
-			conn=await getDbConnection();
-			const policeId=await SQLHelper.selectSingle<number>(
+			const policeId=await conn.selectSingle<number>(
 				"select id from tblPolice where officerId=? limit 1;",
-				conn,
 				[officerId]
 			);
 			result.policeId=policeId;
@@ -73,14 +68,11 @@ export default class Police{
 			conn?.release();
 		}
 	}
-	static async getCurrentCaseId(policeId:number):Promise<GetCurrentCaseIdResult>{
-		let conn:PoolConnection|null=null;
+	static async getCurrentCaseId(conn:DBConnection,policeId:number):Promise<GetCurrentCaseIdResult>{
 		const result=new GetCurrentCaseIdResult();
 		try{
-			conn=await getDbConnection();
-			const caseId=await SQLHelper.selectSingle<number>(
+			const caseId=await conn.selectSingle<number>(
 				"select caseId from tblPoliceCase where policeId=? limit 1;",
-				conn,
 				[policeId]
 			);
 			result.caseId=caseId;
@@ -92,15 +84,12 @@ export default class Police{
 			conn?.release();
 		}
 	}
-	static async create(userId:number,officerId:string,createdBy:number):Promise<CreatePoliceResult>{
-		let conn:PoolConnection|null=null;
+	static async create(conn:DBConnection,userId:number,officerId:string,createdBy:number):Promise<CreatePoliceResult>{
 		const result=new CreatePoliceResult();
 		try{
-			conn=await getDbConnection();
 			await conn.beginTransaction();
-			const policeId=await SQLHelper.insert(
+			const policeId=await conn.insert(
 				"insert into tblPolice(userId,officerId,createdBy)values(?,?,?);",
-				conn,
 				[userId,officerId,createdBy]
 			);
 			if(policeId==null){
@@ -108,7 +97,7 @@ export default class Police{
 				result.code=CreatePoliceResultCode.InsertPoliceFailed;
 				return result;
 			}
-			result.setPoliceId(policeId);
+			result.policeId=policeId;
 			await conn.commit();
 			return result;
 		}catch(err:any){
@@ -125,15 +114,14 @@ export default class Police{
 			conn?.release();
 		}
 	}
-	static async remove(policeId:number,updatedBy:number):Promise<RemovePoliceResult>{
-		let conn:PoolConnection|null=null;
-		let sql:string;
+	static async remove(conn:DBConnection,policeId:number,updatedBy:number):Promise<RemovePoliceResult>{
 		const result=new RemovePoliceResult();
 		try{
-			conn=await getDbConnection();
 			await conn.beginTransaction();
-			sql="update tblPolice set isActive=0 where id=? and isActive=1;";
-			const changedCount=await SQLHelper.execute(sql,conn,[policeId]);
+			const changedCount=await conn.update(
+				"update tblPolice set isActive=0 where id=? and isActive=1;",
+				[policeId]
+			);
 			if(changedCount!==1){
 				await conn.rollback();
 				result.code=RemovePoliceResultCode.UpdatePoliceFailed;
