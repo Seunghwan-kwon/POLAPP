@@ -1,10 +1,9 @@
-// ignore: library_prefixes
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
@@ -71,19 +70,22 @@ class _MapHomePageState extends State<MapHomePage> {
   NMarker? _myLocationMarker; // 현재 사용자의 위치를 지도 위에 표시하는 마커
 
   // 웹소켓 및 동료 마커 관리를 위한 변수
-  IO.Socket? _socket; // 서버와 통신할 소켓 객체
-  final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
+  io.Socket? _socket; // 서버와 통신할 소켓 객체
+  final String _myOfficerId = 'P-1000'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
 
   // 메시지 내역을 저장할 리스트
-  List<RadioMessage> _radioLogs = [];
+  final List<RadioMessage> _radioLogs = [];
+
+  Timer? _locationTimer;
 
   @override
   void initState() {
     super.initState();
     _startLocationTracking(); // 화면 로딩과 동시에 백그라운드에서 기기 위치 추적 시작
     _connectWebSocket();  // 앱 동작 시 소켓 연결
+    _startLocationBroadcastTimer();
   }
 
   @override
@@ -91,7 +93,20 @@ class _MapHomePageState extends State<MapHomePage> {
     _positionStream?.cancel();  // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
     _socket?.dispose();// 화면 종료 시 통신도 종료
     _policeMarkerService.dispose();
+    _locationTimer?.cancel();
     super.dispose();
+  }
+
+  void _startLocationBroadcastTimer() {
+    _locationTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_myLocationMarker != null && _socket != null && _socket!.connected) {
+        _socket!.emit('sendMyLocation', {
+          'officerId': _myOfficerId,
+          'latitude': _myLocationMarker!.position.latitude,
+          'longitude': _myLocationMarker!.position.longitude,
+        });
+      }
+    });
   }
 
 // 웹소켓 연결 및 이벤트 리스너 설정
@@ -99,7 +114,7 @@ class _MapHomePageState extends State<MapHomePage> {
     // 서버 주소 설정
     final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
 
-    _socket = IO.io(serverUrl, <String, dynamic>{
+    _socket = io.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });
