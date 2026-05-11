@@ -71,7 +71,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 웹소켓 및 동료 마커 관리를 위한 변수
   io.Socket? _socket; // 서버와 통신할 소켓 객체
-  final String _myOfficerId = 'P-1000'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
+  final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
 
