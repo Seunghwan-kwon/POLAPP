@@ -9,6 +9,7 @@ import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
 import '../models/safety_status.dart';
 import '../services/police_marker_service.dart';
+import 'ai_feature_page.dart';
 import 'map_bottom_panel.dart';
 import 'setting_page.dart';
 
@@ -354,6 +355,12 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
+  void _openAiFeatures() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const AiFeaturePage()),
+    );
+  }
+
   void _toggleVoiceRecognition() {
     setState(() {
       _isVoiceRecognitionEnabled = !_isVoiceRecognitionEnabled;
@@ -515,6 +522,16 @@ class _MapHomePageState extends State<MapHomePage> {
                           child: Icon(
                             Icons.campaign,
                             color: _isRadioDialogOpen ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'btn_ai_features',
+                          onPressed: _openAiFeatures,
+                          backgroundColor: Colors.white,
+                          child: const Icon(
+                            Icons.smart_toy_outlined,
+                            color: Colors.black87,
                           ),
                         ),
                       ],

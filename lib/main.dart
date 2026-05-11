@@ -3,7 +3,8 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:flutter/foundation.dart'; // kIsWeb을 사용하기 위해 추가
 
 import 'pages/app_entry_page.dart'; 
-import 'pages/admin_dashboard_page.dart'; 
+import 'pages/admin_dashboard_stub.dart'
+    if (dart.library.js_interop) 'pages/admin_dashboard_page.dart';
 
 const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID'); // 네이버 맵 앱 전용 클라이언트 ID
 
