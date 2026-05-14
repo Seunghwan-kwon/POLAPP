@@ -1,5 +1,5 @@
 "use strict";
-const socket=io("http://polapp.cafe24.com");
+const socket=io("/");
 class Case{
 	constructor(id){
 		this.id=id;
@@ -137,7 +137,8 @@ function main(){
 			e.addEventListener("click",(e)=>{
 				myOfficerId=inputBox.value;
 				socket.emit("join",{
-					officerId:myOfficerId
+					officerId:myOfficerId,
+					region:"DEFAULT"
 				});
 			});
 		}
