@@ -50,13 +50,34 @@ const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
 const Case_js_1 = __importDefault(require("./Case.js"));
 const User_js_1 = __importDefault(require("./User.js"));
-const Police_js_1 = __importDefault(require("./Police.js"));
-const http = __importStar(require("http"));
+const Officer_js_1 = __importDefault(require("./Officer.js"));
+const AppServer_js_1 = __importStar(require("./AppServer.js"));
+const PendingMessage_1 = __importDefault(require("./PendingMessage"));
+const http = __importStar(require("node:http"));
 const app = (0, express_1.default)();
 app.use(express_1.default.static("public"));
 app.use(express_1.default.json());
+function getPortPrefix() {
+    return (Number(process.env.portPrefix) || 0);
+}
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const domain = process.env.domain || "localhost";
+    const portPrefix = getPortPrefix();
+    const allowedOrigins = [];
+    allowedOrigins.push(`http://${domain}:${portPrefix + 80}`);
+    if (origin && allowedOrigins.includes(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+    }
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(200);
+    }
+    next();
+});
 const sessionMiddleware = (0, express_session_1.default)({
-    secret: "se-ssi-on sEcREt ke!Y",
+    secret: process.env.sessionSecret || "s2e3cr1et",
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -75,9 +96,9 @@ class Admin {
         });
     }
 }
-app.post("/case/assignPolice", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post("/case/assignOfficer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { caseId, policeId } = req.body;
+    const { caseId, officerId } = req.body;
     const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (updatedBy == null) {
         res.json({
@@ -85,23 +106,60 @@ app.post("/case/assignPolice", (req, res) => __awaiter(void 0, void 0, void 0, f
         });
         return;
     }
-    const assignResult = yield Case_js_1.default.assignPolice(caseId, policeId, updatedBy);
-    res.json({
-        code: 0,
-        result: assignResult
-    });
+    let conn;
+    try {
+        conn = yield (0, AppServer_js_1.getDBConnection)();
+        let _case = yield Case_js_1.default.getCached(caseId, conn);
+        if (_case == null) {
+            res.json({ code: -2 });
+            return;
+        }
+        const result = yield _case.assignOfficer(officerId, updatedBy);
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({ code: -2 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
+    }
 }));
 app.post("/case", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { caseName } = req.body;
-    const caseCreateResult = yield Case_js_1.default.create(caseName);
-    res.json({
-        code: 0,
-        result: caseCreateResult
-    });
-}));
-app.post("/case/setComplete", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { caseId } = req.body;
+    const { name } = req.body;
+    if (name == null || name.length == 0) {
+        res.json({ code: -1 });
+        return;
+    }
+    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
+    if (createdBy == null) {
+        res.json({ code: -2 });
+        return;
+    }
+    try {
+        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        const _case = yield Case_js_1.default.create(name, createdBy, conn);
+        if (_case == null) {
+            res.json({ code: -3 });
+            return;
+        }
+        res.json({
+            code: 0,
+            caseId: _case.id
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({ code: -4 });
+    }
+}));
+app.put("/case/:id/setComplete", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const { id } = req.params;
     const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (updatedBy == null) {
         res.json({
@@ -109,15 +167,45 @@ app.post("/case/setComplete", (req, res) => __awaiter(void 0, void 0, void 0, fu
         });
         return;
     }
-    const setCaseCompleteResult = yield Case_js_1.default.setComplete(caseId, updatedBy);
-    res.json({
-        code: 0,
-        result: setCaseCompleteResult
-    });
+    let conn;
+    try {
+        conn = yield (0, AppServer_js_1.getDBConnection)();
+        const _case = yield Case_js_1.default.getCached(Number(id), conn);
+        if (_case == null) {
+            res.json({
+                code: -2
+            });
+            return;
+        }
+        const result = yield _case.setComplete(updatedBy);
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({
+            code: -2
+        });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
+    }
 }));
 app.post("/user", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { email, passwd, name } = req.body;
+    if (email == null || email.length == 0) {
+        res.json({
+            code: -1
+        });
+        return;
+    }
+    if (passwd == null || passwd.length == 0) {
+        res.json({ code: -1 });
+        return;
+    }
     const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (createdBy == null) {
         res.json({
@@ -125,32 +213,65 @@ app.post("/user", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         });
         return;
     }
-    const userCreateResult = yield User_js_1.default.create(email, passwd, createdBy, name);
-    res.json({
-        code: 0,
-        result: userCreateResult
-    });
+    let conn;
+    try {
+        conn = yield (0, AppServer_js_1.getDBConnection)();
+        const result = yield User_js_1.default.create(conn, email, passwd, createdBy, name);
+        if (result.code < 0) {
+            res.json({ code: -2 });
+            return;
+        }
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({ code: -2 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
+    }
 }));
 app.post("/user/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { email, passwd } = req.body;
-    if (email == null || passwd == null) {
+    if (email == null || email.length == 0) {
         res.json({
             code: -1
         });
         return;
     }
-    const loginResult = yield User_js_1.default.login(email, passwd);
-    if (loginResult.code == 0) {
-        req.session.userId = loginResult.userId;
+    if (passwd == null || passwd.length == 0) {
+        res.json({
+            code: -2
+        });
+        return;
     }
-    res.json({
-        code: 0,
-        result: loginResult
-    });
+    let conn;
+    try {
+        conn = yield (0, AppServer_js_1.getDBConnection)();
+        const result = yield User_js_1.default.login(conn, email, passwd);
+        if (result.code == 0) {
+            req.session.userId = result.userId;
+        }
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        res.json({
+            code: -3
+        });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
+    }
 }));
-app.delete("/user/:userId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { userId } = req.params;
+    const { id } = req.params;
     const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (createdBy == null) {
         res.json({
@@ -158,15 +279,22 @@ app.delete("/user/:userId", (req, res) => __awaiter(void 0, void 0, void 0, func
         });
         return;
     }
-    const deleteUserResult = yield User_js_1.default.remove(userId, createdBy);
-    res.json({
-        code: 0,
-        result: deleteUserResult
-    });
+    try {
+        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        const result = yield User_js_1.default.remove(conn, id, createdBy);
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (ex) {
+        console.error(ex);
+        res.json({ code: -2 });
+    }
 }));
-app.post("/police", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { userId, officerId } = req.body;
+    const { userId, code } = req.body;
     const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (createdBy == null) {
         res.json({
@@ -174,15 +302,26 @@ app.post("/police", (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         });
         return;
     }
-    const createPoliceResult = yield Police_js_1.default.create(userId, officerId, createdBy);
-    res.json({
-        code: 0,
-        result: createPoliceResult
-    });
+    let conn;
+    try {
+        conn = yield (0, AppServer_js_1.getDBConnection)();
+        const result = yield Officer_js_1.default.create(conn, userId, code, createdBy);
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({ code: -2 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
+    }
 }));
-app.delete("/police/:policeId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { policeId } = req.params;
+    const { id } = req.params;
     const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
     if (updatedBy == null) {
         res.json({
@@ -190,145 +329,74 @@ app.delete("/police/:policeId", (req, res) => __awaiter(void 0, void 0, void 0, 
         });
         return;
     }
-    const removePoliceResult = yield Police_js_1.default.remove(policeId, updatedBy);
-    res.json({
-        code: 0,
-        result: removePoliceResult
-    });
+    try {
+        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        let officer = yield Officer_js_1.default.getCached(id, conn);
+        if (officer == null) {
+            res.json({ code: -2 });
+            return;
+        }
+        const result = yield officer.remove(updatedBy);
+        res.json({
+            code: 0,
+            result: result
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.json({ code: -3 });
+    }
 }));
-const sockets = new Map();
-let port = 8080;
-let lastPositionSyncTime = 0;
-const updatedPolices = new Map();
-const policeClients = new Map();
-function setOfficerUpdated(policeId, x, y) {
-    const policeClient = policeClients.get(policeId);
-    if (policeClient == null) {
-        return;
-    }
-    policeClient.x = x;
-    policeClient.y = y;
-    updatedPolices.set(policeId, 1);
-}
-class PoliceClient {
-    constructor(policeId, officerId) {
-        this.x = 0;
-        this.y = 0;
-        this.policeId = policeId;
-        this.officerId = officerId;
-        this.sockets = new Map();
-    }
-    addSocket(socket) {
-        this.sockets.set(socket.id, socket);
-    }
-    removeSocket(socketId) {
-        this.sockets.delete(socketId);
-        return this.sockets.size == 0;
-    }
-    syncPeerPosition(officerId, x, y) {
-        for (const socket of this.sockets.values()) {
-            socket.emit("updateColleagueLocation", {
-                officerId,
-                latitude: x,
-                longitude: y
-            });
-        }
-    }
-}
-function syncOfficerPositions() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const updatedPoliceIds = updatedPolices.keys();
-        for (const policeId of updatedPoliceIds) {
-            const police = policeClients.get(policeId);
-            if (police == null) {
-                console.log("syncOfficerPositions police=null");
-                continue;
-            }
-            /*
-            const getCurrentCaseIdResult=await Police.getCurrentCaseId(officerId);
-            const caseId=getCurrentCaseIdResult.caseId;
-            if(caseId==null){
-                continue;
-            }
-            const getOfficerIdsResult=await Case.getOfficerIds(caseId);
-            if(getOfficerIdsResult.code!=GetOfficerIdsResultCode.Success){
-                continue;
-            }
-            const officerIds=getOfficerIdsResult.ids;
-               */
-            const policeIds = policeClients.keys();
-            for (const _policeId of policeIds) {
-                if (_policeId === policeId) {
-                    continue;
-                }
-                const peerClient = policeClients.get(_policeId);
-                if (peerClient == null) {
-                    console.log("syncOfficerPositions peerClient=null");
-                    continue;
-                }
-                peerClient.syncPeerPosition(police.officerId, police.x, police.y);
-            }
-        }
-        updatedPolices.clear();
-    });
-}
-function loop() {
-    return __awaiter(this, void 0, void 0, function* () {
-        while (true) {
-            yield syncOfficerPositions();
-            yield new Promise(function (resolve) {
-                setTimeout(resolve, 100);
-            });
-        }
-    });
-}
-function removePoliceSocket(policeId, socketId) {
-    const policeClient = policeClients.get(policeId);
-    if (policeClient == null) {
-        return;
-    }
-    const offline = policeClient.removeSocket(socketId);
-    if (offline) {
-        policeClients.delete(policeId);
-    }
-}
+const port = getPortPrefix() + 80;
+const appServer = new AppServer_js_1.default();
 io.on("connection", (socket) => {
     const session = socket.request.session;
     console.log("Connected");
-    let socketPoliceId = null;
-    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId }) {
-        console.log("join officerId=" + officerId);
-        const getPoliceIdResult = yield Police_js_1.default.getPoliceId(officerId);
-        if (getPoliceIdResult.code != 0) {
-            console.log("getPoliceIdResult.code=" + getPoliceIdResult.code);
-            return;
+    let officer = null;
+    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, region, role }) {
+        console.log(`[socket.on join] officerId=${officerId},region=${region},role=${role}`);
+        officer = yield appServer.setOfficerJoined(officerId, region, role, socket);
+        if (officer == null) {
+            console.log(`[socket.on join] Failed. officerId=${officerId},region=${region},role=${role}`);
         }
-        socketPoliceId = getPoliceIdResult.policeId;
-        if (socketPoliceId == null) {
-            return;
-        }
-        let policeClient = policeClients.get(socketPoliceId);
-        if (policeClient == null) {
-            policeClient = new PoliceClient(socketPoliceId, officerId);
-            policeClients.set(socketPoliceId, policeClient);
-        }
-        policeClient.addSocket(socket);
     }));
-    socket.on("sendMyLocation", ({ officerId, latitude, longitude }) => {
-        if (socketPoliceId == null) {
+    socket.on("sendMyLocation", ({ officerId, region, latitude, longitude }) => {
+        if (officer == null) {
+            console.log("[socket.on sendMyLocation] officer=null");
+            socket.disconnect();
             return;
         }
-        setOfficerUpdated(socketPoliceId, latitude, longitude);
+        if (officer.region == null) {
+            return;
+        }
+        officer.updateLocation(latitude, longitude);
+        appServer.setOfficerLocationUpdated(officer);
+    });
+    socket.on("sendRadioMessage", ({ officerId, region, message, timestamp }) => {
+        if (officer == null) {
+            console.log("[socket.on sendRadioMessage] officer=null");
+            socket.disconnect();
+            return;
+        }
+        if (officer.region == null) {
+            return;
+        }
+        const pendingMessage = new PendingMessage_1.default(officer, message, timestamp);
+        appServer.pushPendingMessage(pendingMessage);
     });
     socket.on("disconnect", (reason) => {
-        console.log("disconnected");
-        if (socketPoliceId == null) {
+        console.log("[socket.on disconnect]");
+        if (officer == null) {
+            socket.disconnect();
             return;
         }
-        removePoliceSocket(socketPoliceId, socket.id);
+        officer.removeSocket(socket);
+        if (officer.isOffline()) {
+            appServer.setOfficerOffline(officer);
+        }
     });
 });
+appServer.loop();
 httpServer.listen(port, () => {
-    console.log("Listening on port=" + port);
+    console.log(`Listening on port=${port}`);
 });
-loop();

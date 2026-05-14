@@ -15,10 +15,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDbConnection = getDbConnection;
 const promise_1 = __importDefault(require("mysql2/promise"));
 const pool = promise_1.default.createPool({
-    host: process.env.dbHost || "localhost",
-    user: process.env.dbUser || "kinnefix",
-    database: process.env.database || "polapp",
-    password: process.env.password || "khKim9898!!"
+    host: process.env.dbHost || "",
+    user: process.env.dbUser || "",
+    database: process.env.database || "",
+    password: process.env.password || ""
 });
 function getDbConnection() {
     return __awaiter(this, void 0, void 0, function* () {

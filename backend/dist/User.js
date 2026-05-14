@@ -13,8 +13,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const bcrypt_1 = __importDefault(require("bcrypt"));
-const db_js_1 = require("./db.js");
-const SQLHelper_js_1 = __importDefault(require("./SQLHelper.js"));
 var UserCreateResultCode;
 (function (UserCreateResultCode) {
     UserCreateResultCode[UserCreateResultCode["Success"] = 0] = "Success";
@@ -26,9 +24,6 @@ class UserCreateResult {
     constructor() {
         this.code = UserCreateResultCode.Success;
         this.userId = null;
-    }
-    setCode(code) {
-        this.code = code;
     }
 }
 var UserLoginResultCode;
@@ -46,9 +41,6 @@ class UserLoginResult {
         this.code = UserLoginResultCode.Success;
         this.userId = null;
     }
-    setCode(code) {
-        this.code = code;
-    }
 }
 var UserRemoveResultCode;
 (function (UserRemoveResultCode) {
@@ -61,28 +53,23 @@ class UserRemoveResult {
     constructor() {
         this.code = UserRemoveResultCode.Success;
     }
-    setCode(code) {
-        this.code = code;
-    }
 }
 class User {
-    static remove(userId, updatedBy) {
+    static remove(conn, userId, updatedBy) {
         return __awaiter(this, void 0, void 0, function* () {
-            let conn = null;
             const result = new UserRemoveResult();
             try {
-                conn = yield (0, db_js_1.getDbConnection)();
                 yield conn.beginTransaction();
-                const historyId = yield SQLHelper_js_1.default.insert("insert into tblUserHistory(userId,email,passwordHash)select id,email,passwordHash from tblUser where id=? limit 1;", conn, [userId]);
+                const historyId = yield conn.insert("insert into tblUserHistory(userId,email,passwordHash)select id,email,passwordHash from tblUser where id=? limit 1;", [userId]);
                 if (historyId == null) {
                     yield conn.rollback();
-                    result.setCode(UserRemoveResultCode.HistoryInsertFailed);
+                    result.code = UserRemoveResultCode.HistoryInsertFailed;
                     return result;
                 }
-                const changedCount = yield SQLHelper_js_1.default.execute("delete from tblUser where id=?;", conn, [userId]);
+                const changedCount = yield conn.update("delete from tblUser where id=?;", [userId]);
                 if (changedCount !== 1) {
                     yield conn.rollback();
-                    result.setCode(UserRemoveResultCode.DeleteFailed);
+                    result.code = UserRemoveResultCode.DeleteFailed;
                     return result;
                 }
                 yield conn.commit();
@@ -93,7 +80,7 @@ class User {
                     yield (conn === null || conn === void 0 ? void 0 : conn.rollback());
                 }
                 catch (_a) { }
-                result.setCode(UserRemoveResultCode.Exception1);
+                result.code = UserRemoveResultCode.Exception1;
                 return result;
             }
             finally {
@@ -101,31 +88,26 @@ class User {
             }
         });
     }
-    static login(email, password) {
+    static login(conn, email, password) {
         return __awaiter(this, void 0, void 0, function* () {
-            let conn = null;
-            let sql;
-            let result = new UserLoginResult();
+            const result = new UserLoginResult();
             try {
-                conn = yield (0, db_js_1.getDbConnection)();
-                sql = "select id,passwordHash from tblUser where email=? and isActive=1 limit 1;";
-                const userRow = yield SQLHelper_js_1.default.selectRow(sql, conn, [email]);
+                const userRow = yield conn.selectRow("select id,passwordHash from tblUser where email=? and isActive=1 limit 1;", [email]);
                 if (userRow == null) {
                     yield conn.rollback();
-                    result.setCode(UserLoginResultCode.NoSuchUser);
+                    result.code = UserLoginResultCode.NoSuchUser;
                     return result;
                 }
                 const passwordMatched = yield bcrypt_1.default.compare(password, userRow.passwordHash);
                 if (!passwordMatched) {
                     yield conn.rollback();
-                    result.setCode(UserLoginResultCode.PasswordMismatch);
+                    result.code = UserLoginResultCode.PasswordMismatch;
                     return result;
                 }
-                sql = "insert into tblLoginLog(userId,method)values(?,1);";
-                const insertId = yield SQLHelper_js_1.default.insert(sql, conn, [userRow.id]);
+                const insertId = yield conn.insert("insert into tblLoginLog(userId,method)values(?,1);", [userRow.id]);
                 if (insertId == null) {
                     yield conn.rollback();
-                    result.setCode(UserLoginResultCode.LogInsertFailed);
+                    result.code = UserLoginResultCode.LogInsertFailed;
                     return result;
                 }
                 result.userId = userRow.id;
@@ -137,7 +119,7 @@ class User {
                     yield (conn === null || conn === void 0 ? void 0 : conn.rollback());
                 }
                 catch (_a) { }
-                result.setCode(UserLoginResultCode.Exception1);
+                result.code = UserLoginResultCode.Exception1;
                 return result;
             }
             finally {
@@ -145,17 +127,13 @@ class User {
             }
         });
     }
-    static create(email, password, createdBy, name) {
+    static create(conn, email, password, createdBy, name) {
         return __awaiter(this, void 0, void 0, function* () {
             const result = new UserCreateResult();
-            let conn = null;
-            let sql;
             try {
-                conn = yield (0, db_js_1.getDbConnection)();
                 yield conn.beginTransaction();
                 const passwordHash = yield bcrypt_1.default.hash(password, 12);
-                sql = "insert into tblUser(email,passwordHash,createdBy)values(?,?,?);";
-                const userId = yield SQLHelper_js_1.default.insert(sql, conn, [email, passwordHash, createdBy]);
+                const userId = yield conn.insert("insert into tblUser(email,passwordHash,createdBy)values(?,?,?);", [email, passwordHash, createdBy]);
                 if (userId == null) {
                     yield conn.rollback();
                     return result;
@@ -169,7 +147,7 @@ class User {
                     yield (conn === null || conn === void 0 ? void 0 : conn.rollback());
                 }
                 catch (_a) { }
-                result.setCode(UserCreateResultCode.Exception1);
+                result.code = UserCreateResultCode.Exception1;
                 return result;
             }
             finally {
