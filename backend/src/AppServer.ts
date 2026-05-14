@@ -1,8 +1,8 @@
 import{Socket}from"socket.io";
-import Police from"./Police.js";
-import OfficerClient from"./OfficerClient.js";
+import Officer from"./Officer.js";
 import PendingMessage from"./PendingMessage.js";
 import DBConnection from"./DBConnection.js";
+import Region from"./Region.js";
 import{getMySqlConnection}from"./MySqlConnection.js";
 enum DBType{
 	MySQL,
@@ -20,146 +20,112 @@ export async function getDBConnection(){
 	}
 }
 export default class AppServer{
-	officerLocationUpdates:Map<number,number>;
-	officersByRegion:Map<string,Map<number,OfficerClient>>;
-	officerClients:Map<number,OfficerClient>;
+	updatedOfficers:Map<number,Officer>;
+	officers:Map<number,Officer>;
 	pendingMessages:Array<PendingMessage>;
 	constructor(){
-		this.officerLocationUpdates=new Map<number,number>();
-		this.officersByRegion=new Map<string,Map<number,OfficerClient>>();
-		this.officerClients=new Map<number,OfficerClient>();
+		this.updatedOfficers=new Map<number,Officer>();
+		this.officers=new Map<number,Officer>();
 		this.pendingMessages=new Array<PendingMessage>();
 	}
-	async syncOfficerLocations(){
-		const updatedPoliceIds=this.officerLocationUpdates.keys();
-		for(const policeId of updatedPoliceIds){
-			const officerClient=this.officerClients.get(policeId);
-			if(officerClient==null){
-				console.log("[AppServer.syncOfficerLocations] officerClient=null");
+	syncOfficerLocations(){
+		const updatedOfficers=this.updatedOfficers.values();
+		for(const officer of updatedOfficers){
+			const region=officer.region;
+			if(region==null){
+				console.log(`NoRegion officer.code=${officer.code}`);
 				continue;
 			}
-			if(officerClient.officerId==null){
-				console.log("[AppServer.syncOfficerLocations] officerClient.officerId=null");
-				continue;
-			}
-			/*
-			const getCurrentCaseIdResult=await Police.getCurrentCaseId(officerId);
-			const caseId=getCurrentCaseIdResult.caseId;
-			if(caseId==null){
-				continue;
-			}
-			const getOfficerIdsResult=await Case.getOfficerIds(caseId);
-			if(getOfficerIdsResult.code!=GetOfficerIdsResultCode.Success){
-				continue;
-			}
-			const officerIds=getOfficerIdsResult.ids;
-			*/
-			const policeIds=this.officerClients.keys();
-			for(const _policeId of policeIds){
-				if(_policeId===policeId){
+			const peers=region.officers.values();
+			for(const peer of peers){
+				if(peer==officer){
 					continue;
 				}
-				const peerOfficerClient=this.officerClients.get(_policeId);
-				if(peerOfficerClient==null){
-					console.log("[syncOfficerLocations] peerOfficerClient=null");
-					continue;
-				}
-				peerOfficerClient.syncPeerLocation(officerClient.officerId,officerClient.x,officerClient.y);
+				const updated=peer.syncPeerLocation(officer);
 			}
 		}
-		this.officerLocationUpdates.clear();
+		this.updatedOfficers.clear();
 	}
 	broadcastOfficerMessages(){
 		for(const pendingMessage of this.pendingMessages){
-			const region=pendingMessage.region;
-			const peerOfficerClients=this.officersByRegion.get(region);
-			if(peerOfficerClients==null){
+			const sender=pendingMessage.sender;
+			const region=sender.region;
+			if(region==null){
+				console.log("[broadcaseOfficerMessages] region==null");
 				continue;
 			}
-			for(const peerOfficerClient of peerOfficerClients.values()){
-				if(peerOfficerClient.policeId===pendingMessage.senderPoliceId){
+			const peers=region.officers.values();
+			for(const peer of peers){
+				if(peer==sender){
 					continue;
 				}
-				peerOfficerClient.syncPeerMessage(pendingMessage.senderOfficerId,pendingMessage.region,pendingMessage.text,pendingMessage.timestamp);
+				peer.syncPeerMessage(pendingMessage);
 			}
 		}
 		this.pendingMessages.length=0;
 	}
-	async setOfficerJoined(officerId:string,region:string,socket:Socket):Promise<OfficerClient|null>{
-		const conn=await getDBConnection();
-		const getPoliceIdResult=await Police.getPoliceId(conn,officerId);
-		if(getPoliceIdResult.code!=0){
-			console.log("[setOfficerJoined] getPoliceIdResult.code="+getPoliceIdResult.code);
+	async setOfficerJoined(officerCode:string,regionCode:string,socket:Socket):Promise<Officer|null>{
+		try{
+			const conn=await getDBConnection();
+			const result=await Officer.findByCode(conn,officerCode);
+			if(result.code!=0){
+				console.log(`[setOfficerJoined] result.code=${result.code}`);
+				return null;
+			}
+			const officer=result.officer;
+			if(officer==null){
+				console.log(`[setOfficerJoined] officer=null`);
+				return null;
+			}
+			const origOfficers=this.officers.values();
+			for(const origOfficer of origOfficers){
+				if(origOfficer==officer){
+					continue;
+				}
+				officer.syncPeerLocation(origOfficer);
+			}
+			if(regionCode!=null){
+				const region=await Region.findByCode(regionCode,conn);
+				if(region!=null){
+					officer.setRegion(region);
+					this.setOfficerOnline(officer);
+				}
+			}
+			officer.addSocket(socket);
+			return officer;
+		}catch(e:any){
+			console.error(e);
+			console.log(`[setOfficerJoined] exception=${e.toString()}`);
 			return null;
 		}
-		const socketPoliceId=getPoliceIdResult.policeId;
-		if(socketPoliceId==null){
-			console.log("[setOfficerJoined] socketPoliceId=null");
-			return null;
-		}
-		const origOfficerClients=this.officerClients.values();
-		const officerClient=this.getOfficerClient(socketPoliceId);
-		officerClient.officerId=officerId;
-		officerClient.setRegion(region);
-		officerClient.addSocket(socket);
-		for(const origOfficerClient of origOfficerClients){
-			if(origOfficerClient.officerId==null){
-				continue;
-			}
-			if(origOfficerClient.policeId===officerClient.policeId){
-				continue;
-			}
-			officerClient.syncPeerLocation(
-				origOfficerClient.officerId,
-				origOfficerClient.x,
-				origOfficerClient.y
-			);
-		}
-		return officerClient;
 	}
-	async loop(){
+	async loop():Promise<void>{
 		while(true){
-			await this.syncOfficerLocations();
+			this.syncOfficerLocations();
 			this.broadcastOfficerMessages();
 			await new Promise(function(resolve){
-				setTimeout(resolve,100);
+				setTimeout(resolve,50);
 			});
 		}
-	}
-	getOfficerClient(policeId:number):OfficerClient{
-		let officerClient=this.officerClients.get(policeId);
-		if(officerClient==null){
-			officerClient=new OfficerClient(policeId,this);
-			this.officerClients.set(policeId,officerClient);
-		}
-		return officerClient;
 	}
 	pushPendingMessage(pendingMessage:PendingMessage):PendingMessage{
 		this.pendingMessages.push(pendingMessage);
 		return pendingMessage;
 	}
-	setOfficerOffline(policeId:number){
-		this.officerClients.delete(policeId);
+	setOfficerOffline(officer:Officer):void{
+		this.officers.delete(officer.id);
 	}
-	removeOfficerFromRegion(region:string,policeId:number){
-		const officers=this.officersByRegion.get(region);
-		if(officers==null){
-			return;
-		}
-		officers.delete(policeId);
+	setOfficerLocationUpdated(officer:Officer):void{
+		this.updatedOfficers.set(officer.id,officer);
 	}
-	setOfficerLocationUpdated(policeId:number){
-		this.officerLocationUpdates.set(policeId,1);
+	setOfficerOnline(officer:Officer):void{
+		this.officers.set(officer.id,officer);
 	}
-	setOfficerRegion(region:string,officerClient:OfficerClient):number{
-		const officers=this.officersByRegion.get(region);
-		if(officers==null){
-			return-1;
+	setOfficerRegion(region:Region,officer:Officer):number{
+		if(officer.region!=null){
+			officer.region.removeOfficer(officer);
 		}
-		if(officerClient.region!=null){
-			this.removeOfficerFromRegion(officerClient.region,officerClient.policeId);
-		}
-		officers.set(officerClient.policeId,officerClient);
+		officer.region=region;
 		return 0;
 	}
 }

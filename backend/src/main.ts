@@ -3,10 +3,11 @@ import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
 import Case,{GetOfficerIdsResultCode}from"./Case.js";
 import User from"./User.js";
-import Police from"./Police.js";
-import OfficerClient from"./OfficerClient.js";
+import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
-import*as http from"http";
+import PendingMessage from"./PendingMessage";
+import*as http from"node:http";
+import*as readline from"node:readline";
 declare module"http"{
 	interface IncomingMessage{
 		session:Session&Partial<SessionData>
@@ -42,12 +43,12 @@ class Admin{
 	static async create(userId:number){
 	}
 }
-interface AssignPoliceRequestBody{
+interface AssignOfficerRequestBody{
 	caseId:number,
-	policeId:number
+	officerId:number
 }
-app.post("/case/assignPolice",async(req:Request<{},{},AssignPoliceRequestBody>,res:Response)=>{
-	const{caseId,policeId}=req.body;
+app.post("/case/assignOfficer",async(req:Request<{},{},AssignOfficerRequestBody>,res:Response)=>{
+	const{caseId,officerId}=req.body;
 	const updatedBy=req.session?.userId;
 	if(updatedBy==null){
 		res.json({
@@ -55,23 +56,58 @@ app.post("/case/assignPolice",async(req:Request<{},{},AssignPoliceRequestBody>,r
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const assignResult=await Case.assignPolice(conn,caseId,policeId,updatedBy);
-	res.json({
-		code:0,
-		result:assignResult
-	});
+	let conn;
+	try{
+		conn=await getDBConnection();
+		let _case=await Case.getCached(caseId,conn);
+		if(_case==null){
+			res.json({code:-2});
+			return;
+		}
+		const result=await _case.assignOfficer(officerId,updatedBy);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-2});
+	}finally{
+		conn?.release();
+	}
 });
-app.post("/case",async(req:Request,res:Response)=>{
-	const{caseName}=req.body;
-	const caseCreateResult=await Case.create(caseName);
-	res.json({
-		code:0,
-		result:caseCreateResult
-	});
+interface CreateCaseRequestBody{
+	name:string
+}
+app.post("/case",async(req:Request<{},{},CreateCaseRequestBody>,res:Response)=>{
+	const{name}=req.body;
+	if(name==null||name.length==0){
+		res.json({code:-1});
+		return;
+	}
+	const createdBy=req.session?.userId;
+	if(createdBy==null){
+		res.json({code:-2});
+		return;
+	}
+	try{
+		const conn=await getDBConnection();
+		const _case=await Case.create(name,createdBy,conn);
+		if(_case==null){
+			res.json({code:-3});
+			return;
+		}
+		res.json({
+			code:0,
+			caseId:_case.id
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-4});
+	}
 });
-app.post("/case/setComplete",async(req:Request,res:Response)=>{
-	const{caseId}=req.body;
+app.put("/case/:id/setComplete",async(req:Request,res:Response)=>{
+	const{id}=req.params;
 	const updatedBy=req.session?.userId;
 	if(updatedBy==null){
 		res.json({
@@ -79,12 +115,29 @@ app.post("/case/setComplete",async(req:Request,res:Response)=>{
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const setCaseCompleteResult=await Case.setComplete(conn,caseId,updatedBy);
-	res.json({
-		code:0,
-		result:setCaseCompleteResult
-	});
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const _case=await Case.getCached(Number(id),conn);
+		if(_case==null){
+			res.json({
+				code:-2
+			});
+			return;
+		}
+		const result=await _case.setComplete(updatedBy);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({
+			code:-2
+		});
+	}finally{
+		conn?.release();
+	}
 });
 interface CreateUserRequestBody{
 	email:string,
@@ -93,6 +146,16 @@ interface CreateUserRequestBody{
 }
 app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
 	const{email,passwd,name}=req.body;
+	if(email==null||email.length==0){
+		res.json({
+			code:-1
+		});
+		return;
+	}
+	if(passwd==null||passwd.length==0){
+		res.json({code:-1});
+		return;
+	}
 	const createdBy=req.session?.userId;
 	if(createdBy==null){
 		res.json({
@@ -100,12 +163,24 @@ app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const userCreateResult=await User.create(conn,email,passwd,createdBy,name);
-	res.json({
-		code:0,
-		result:userCreateResult
-	});
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const result=await User.create(conn,email,passwd,createdBy,name);
+		if(result.code<0){
+			res.json({code:-2});
+			return;
+		}
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-2});
+	}finally{
+		conn?.release();
+	}
 });
 interface UserLoginRequestBody{
 	email:string,
@@ -113,27 +188,42 @@ interface UserLoginRequestBody{
 }
 app.post("/user/login",async(req:Request<{},{},UserLoginRequestBody>,res:Response)=>{
 	const{email,passwd}=req.body;
-	if(email==null||passwd==null){
+	if(email==null||email.length==0){
 		res.json({
 			code:-1
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const loginResult=await User.login(conn,email,passwd);
-	if(loginResult.code==0){
-		req.session.userId=loginResult.userId;
+	if(passwd==null||passwd.length==0){
+		res.json({
+			code:-2
+		});
+		return;
 	}
-	res.json({
-		code:0,
-		result:loginResult
-	});
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const result=await User.login(conn,email,passwd);
+		if(result.code==0){
+			req.session.userId=result.userId;
+		}
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		res.json({
+			code:-3
+		});
+	}finally{
+		conn?.release();
+	}
 });
 interface DeleteUserParams{
-	userId:number
+	id:number
 }
-app.delete("/user/:userId",async(req:Request<DeleteUserParams>,res:Response)=>{
-	const{userId}=req.params;
+app.delete("/user/:id",async(req:Request<DeleteUserParams>,res:Response)=>{
+	const{id}=req.params;
 	const createdBy=req.session?.userId;
 	if(createdBy==null){
 		res.json({
@@ -141,19 +231,24 @@ app.delete("/user/:userId",async(req:Request<DeleteUserParams>,res:Response)=>{
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const deleteUserResult=await User.remove(conn,userId,createdBy);
-	res.json({
-		code:0,
-		result:deleteUserResult
-	});
+	try{
+		const conn=await getDBConnection();
+		const result=await User.remove(conn,id,createdBy);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(ex){
+		console.error(ex);
+		res.json({code:-2});
+	}
 });
-interface CreatePoliceRequestBody{
+interface CreateOfficerRequestBody{
 	userId:number,
-	officerId:string
+	code:string
 }
-app.post("/police",async(req:Request<{},{},CreatePoliceRequestBody>,res:Response)=>{
-	const{userId,officerId}=req.body;
+app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Response)=>{
+	const{userId,code}=req.body;
 	const createdBy=req.session?.userId;
 	if(createdBy==null){
 		res.json({
@@ -161,18 +256,26 @@ app.post("/police",async(req:Request<{},{},CreatePoliceRequestBody>,res:Response
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const createPoliceResult=await Police.create(conn,userId,officerId,createdBy);
-	res.json({
-		code:0,
-		result:createPoliceResult
-	});
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const result=await Officer.create(conn,userId,code,createdBy);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-2});
+	}finally{
+		conn?.release();
+	}
 });
-interface DeletePoliceParams{
-	policeId:number;
+interface DeleteOfficerParams{
+	id:number;
 }
-app.delete("/police/:policeId",async(req:Request<DeletePoliceParams>,res:Response)=>{
-	const{policeId}=req.params;
+app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>{
+	const{id}=req.params;
 	const updatedBy=req.session?.userId;
 	if(updatedBy==null){
 		res.json({
@@ -180,43 +283,64 @@ app.delete("/police/:policeId",async(req:Request<DeletePoliceParams>,res:Respons
 		});
 		return;
 	}
-	const conn=await getDBConnection();
-	const removePoliceResult=await Police.remove(conn,policeId,updatedBy);
-	res.json({
-		code:0,
-		result:removePoliceResult
-	});
+	try{
+		const conn=await getDBConnection();
+		let officer=await Officer.getCached(id,conn);
+		if(officer==null){
+			res.json({code:-2});
+			return;
+		}
+		const result=await officer.remove(updatedBy);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-3});
+	}
 });
 let port=8080;
 const appServer=new AppServer();
 io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log("Connected");
-	let officerClient:OfficerClient|null=null;
+	let officer:Officer|null=null;
 	socket.on("join",async({officerId,region})=>{
-		console.log("join officerId="+officerId+",region="+region);
-		officerClient=await appServer.setOfficerJoined(officerId,region,socket);
+		console.log(`[socket.on join] officerId=${officerId},region=${region}`);
+		officer=await appServer.setOfficerJoined(officerId,region,socket);
 	});
 	socket.on("sendMyLocation",({officerId,latitude,longitude})=>{
-		if(officerClient==null){
-			console.log("sendMyLocation officerClient=null");
+		if(officer==null){
+			console.log("[socket.on sendMyLocation] officer=null");
+			socket.disconnect();
 			return;
 		}
-		officerClient.setLocationUpdated(latitude,longitude);
+		officer.updateLocation(latitude,longitude);
+		appServer.setOfficerLocationUpdated(officer);
 	});
 	socket.on("sendRadioMessage",({officerId,region,message,timestamp})=>{
-		if(officerClient==null){
-			console.log("[socket.sendRadioMessageHandler] officerClient=null");
+		if(officer==null){
+			console.log("[socket.on sendRadioMessage] officer=null");
+			socket.disconnect();
 			return;
 		}
-		officerClient.pushRadioMessage(message,timestamp);
+		if(officer.region==null){
+			return;
+		}
+		const pendingMessage=new PendingMessage(officer,message,timestamp);
+		appServer.pushPendingMessage(pendingMessage);
 	});
 	socket.on("disconnect",(reason:string)=>{
-		console.log("socket.disconnect");
-		if(officerClient==null){
+		console.log("[socket.on disconnect]");
+		if(officer==null){
+			socket.disconnect();
 			return;
 		}
-		officerClient.removeSocket(socket.id);
+		officer.removeSocket(socket);
+		if(officer.isOffline()){
+			appServer.setOfficerOffline(officer);
+		}
 	});
 });
 appServer.loop();
