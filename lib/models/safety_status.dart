@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 // 경찰관 상태 정보
 // 백엔드 구현 필요 페이지
 
+// 4개 상태 (대기, 순찰, 출동, 사건 처리)
 enum SafetyStatus {
   waiting,
   patrol,
