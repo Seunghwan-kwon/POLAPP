@@ -21,6 +21,25 @@ declare module"express-session"{
 const app:Application=express();
 app.use(express.static("public"));
 app.use(express.json());
+function getPortPrefix(){
+	return (Number(process.env.portPrefix)||0);
+}
+app.use((req,res,next)=>{
+	const origin=req.headers.origin;
+	const domain=process.env.domain||"localhost";
+	const portPrefix=getPortPrefix();
+	const allowedOrigins=[];
+	allowedOrigins.push(`http://${domain}:${portPrefix+80}`);
+	if(origin&&allowedOrigins.includes(origin)){
+		res.header("Access-Control-Allow-Origin",origin);
+	}
+	res.header("Access-Control-Allow-Methods","GET, POST, PUT, DELETE, OPTIONS");
+	res.header("Access-Control-Allow-Headers","Content-Type");
+	if(req.method==="OPTIONS"){
+		return res.sendStatus(200);
+	}
+	next();
+});
 const sessionMiddleware=session({
 	secret:process.env.sessionSecret||"s2e3cr1et",
 	resave:false,
@@ -300,7 +319,7 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 		res.json({code:-3});
 	}
 });
-let port=8080;
+const port=getPortPrefix()+80;
 const appServer=new AppServer();
 io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
@@ -348,5 +367,5 @@ io.on("connection",(socket:Socket)=>{
 });
 appServer.loop();
 httpServer.listen(port,()=>{
-	console.log("Listening on port="+port);
+	console.log(`Listening on port=${port}`);
 });

@@ -10,5 +10,10 @@
   "devDependencies": {
     "@types/express-session": "^1.18.2",
     "@types/node": "^25.5.2"
+  },
+  "scripts":{
+	  "start:local":"node --env-file .env.local dist/main.js",
+	  "start:production":"node --env-file .env dist/main.js",
+	  "build":"tsc"
   }
 }
