@@ -4,7 +4,7 @@ const pool:Pool=mysql.createPool({
 	host:process.env.dbHost||"",
 	user:process.env.dbUser||"",
 	database:process.env.database||"",
-	password:process.env.password||""
+	password:process.env.dbPassword||""
 });
 export class MySqlConnection extends DBConnection{
 	conn:PoolConnection;

@@ -12,8 +12,8 @@
     "@types/node": "^25.5.2"
   },
   "scripts":{
-	  "start:local":"node --env-file .env.local dist/main.js",
-	  "start:production":"node --env-file .env dist/main.js",
+	  "start:local":"node --env-file=.env.local dist/main.js",
+	  "start:production":"node --env-file=.env dist/main.js",
 	  "build":"tsc"
   }
 }

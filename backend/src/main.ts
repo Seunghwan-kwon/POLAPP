@@ -321,6 +321,7 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 });
 const port=getPortPrefix()+80;
 const appServer=new AppServer();
+console.log("port="+port);
 io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log("Connected");
