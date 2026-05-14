@@ -332,10 +332,13 @@ io.on("connection",(socket:Socket)=>{
 			console.log(`[socket.on join] Failed. officerId=${officerId},region=${region},role=${role}`);
 		}
 	});
-	socket.on("sendMyLocation",({officerId,latitude,longitude})=>{
+	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
 		if(officer==null){
 			console.log("[socket.on sendMyLocation] officer=null");
 			socket.disconnect();
+			return;
+		}
+		if(officer.region==null){
 			return;
 		}
 		officer.updateLocation(latitude,longitude);
