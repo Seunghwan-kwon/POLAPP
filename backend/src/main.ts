@@ -306,9 +306,12 @@ io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log("Connected");
 	let officer:Officer|null=null;
-	socket.on("join",async({officerId,region})=>{
-		console.log(`[socket.on join] officerId=${officerId},region=${region}`);
-		officer=await appServer.setOfficerJoined(officerId,region,socket);
+	socket.on("join",async({officerId,region,role})=>{
+		console.log(`[socket.on join] officerId=${officerId},region=${region},role=${role}`);
+		officer=await appServer.setOfficerJoined(officerId,region,role,socket);
+		if(officer==null){
+			console.log(`[socket.on join] Failed. officerId=${officerId},region=${region},role=${role}`);
+		}
 	});
 	socket.on("sendMyLocation",({officerId,latitude,longitude})=>{
 		if(officer==null){

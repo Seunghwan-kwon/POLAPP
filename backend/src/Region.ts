@@ -18,9 +18,11 @@ export default class Region{
 		this.officers.delete(officer.id);
 	}
 	static cached=new Map<number,Region|null>();
+	/*
 	static setCache(id:number,region:Region){
 		Region.cached.set(id,region);
 	}
+       */
 	static async getCached(id:number,conn:DBConnection):Promise<Region|null>{
 		let region=Region.cached.get(id);
 		if(region==undefined){

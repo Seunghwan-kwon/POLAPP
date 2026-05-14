@@ -3,6 +3,7 @@ import Officer from"./Officer.js";
 import PendingMessage from"./PendingMessage.js";
 import DBConnection from"./DBConnection.js";
 import Region from"./Region.js";
+import Role from"./Role.js";
 import{getMySqlConnection}from"./MySqlConnection.js";
 enum DBType{
 	MySQL,
@@ -23,25 +24,49 @@ export default class AppServer{
 	updatedOfficers:Map<number,Officer>;
 	officers:Map<number,Officer>;
 	pendingMessages:Array<PendingMessage>;
+	adminRole:Role|null;
 	constructor(){
 		this.updatedOfficers=new Map<number,Officer>();
 		this.officers=new Map<number,Officer>();
 		this.pendingMessages=new Array<PendingMessage>();
+		this.adminRole=null;
 	}
-	syncOfficerLocations(){
+	async getAdminRole():Promise<Role|null>{
+		if(this.adminRole==null){
+			try{
+				const conn=await getDBConnection();
+				const role=await Role.findByCode("ADMIN",conn);
+				this.adminRole=role;
+			}catch(ex){
+				console.error(ex);
+				return null;
+			}
+		}
+		return this.adminRole;
+	}
+	async syncOfficerLocations(){
 		const updatedOfficers=this.updatedOfficers.values();
 		for(const officer of updatedOfficers){
 			const region=officer.region;
 			if(region==null){
-				console.log(`NoRegion officer.code=${officer.code}`);
 				continue;
 			}
-			const peers=region.officers.values();
+			let peers=region.officers.values();
 			for(const peer of peers){
 				if(peer==officer){
 					continue;
 				}
-				const updated=peer.syncPeerLocation(officer);
+				peer.syncPeerLocation(officer);
+			}
+			const adminRole=await this.getAdminRole();
+			if(adminRole!=null){
+				peers=adminRole.officers.values();
+				for(const peer of peers){
+					if(peer==officer){
+						continue;
+					}
+					peer.syncPeerLocation(officer);
+				}
 			}
 		}
 		this.updatedOfficers.clear();
@@ -64,7 +89,7 @@ export default class AppServer{
 		}
 		this.pendingMessages.length=0;
 	}
-	async setOfficerJoined(officerCode:string,regionCode:string,socket:Socket):Promise<Officer|null>{
+	async setOfficerJoined(officerCode:string,regionCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
 		try{
 			const conn=await getDBConnection();
 			const result=await Officer.findByCode(conn,officerCode);
@@ -88,10 +113,16 @@ export default class AppServer{
 				const region=await Region.findByCode(regionCode,conn);
 				if(region!=null){
 					officer.setRegion(region);
-					this.setOfficerOnline(officer);
+				}
+			}
+			if(roleCode!=null){
+				const role=await Role.findByCode(roleCode,conn);
+				if(role!=null){
+					officer.setRole(role);
 				}
 			}
 			officer.addSocket(socket);
+			this.officers.set(officer.id,officer);
 			return officer;
 		}catch(e:any){
 			console.error(e);
@@ -101,7 +132,7 @@ export default class AppServer{
 	}
 	async loop():Promise<void>{
 		while(true){
-			this.syncOfficerLocations();
+			await this.syncOfficerLocations();
 			this.broadcastOfficerMessages();
 			await new Promise(function(resolve){
 				setTimeout(resolve,50);
@@ -117,15 +148,5 @@ export default class AppServer{
 	}
 	setOfficerLocationUpdated(officer:Officer):void{
 		this.updatedOfficers.set(officer.id,officer);
-	}
-	setOfficerOnline(officer:Officer):void{
-		this.officers.set(officer.id,officer);
-	}
-	setOfficerRegion(region:Region,officer:Officer):number{
-		if(officer.region!=null){
-			officer.region.removeOfficer(officer);
-		}
-		officer.region=region;
-		return 0;
 	}
 }

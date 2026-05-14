@@ -3,6 +3,7 @@ import DBConnection from"./DBConnection.js";
 import Case from"./Case.js";
 import PendingMessage from"./PendingMessage.js";
 import Region from"./Region.js";
+import Role from"./Role.js";
 enum RemoveResultCode{
 	Success=0,
 	Exception1=-1,
@@ -55,10 +56,25 @@ class FindResult{
 	}
 }
 export default class Officer{
-	static cached=new Map<number,Officer|null>();
-	static setCache(officer:Officer){
-		Officer.cached.delete(officer.id);
+	id:number;
+	code:string;
+	x:number;
+	y:number;
+	region:Region|null;
+	role:Role|null;
+	sockets:Map<string,Socket>
+	conn:DBConnection;
+	constructor(id:number,conn:DBConnection){
+		this.id=id;
+		this.x=0;
+		this.y=0;
+		this.region=null;
+		this.role=null;
+		this.code="(unknown)";
+		this.sockets=new Map<string,Socket>();
+		this.conn=conn;
 	}
+	static cached=new Map<number,Officer|null>();
 	static async getCached(id:number,conn:DBConnection):Promise<Officer|null>{
 		let officer=Officer.cached.get(id);
 		if(officer===undefined){
@@ -74,22 +90,6 @@ export default class Officer{
 			Officer.cached.set(id,officer);
 		}
 		return officer;
-	}
-	id:number;
-	code:string;
-	x:number;
-	y:number;
-	region:Region|null;
-	sockets:Map<string,Socket>
-	conn:DBConnection;
-	constructor(id:number,conn:DBConnection){
-		this.id=id;
-		this.x=0;
-		this.y=0;
-		this.region=null;
-		this.code="(unknown)";
-		this.sockets=new Map<string,Socket>();
-		this.conn=conn;
 	}
 	static async findByCode(conn:DBConnection,code:string):Promise<FindResult>{
 		try{
@@ -110,9 +110,9 @@ export default class Officer{
 			conn?.release();
 		}
 	}
-	async getCase(conn:DBConnection):Promise<GetCaseResult>{
+	async getCase():Promise<GetCaseResult>{
 		try{
-			const caseId=await conn.selectSingle<number>(
+			const caseId=await this.conn.selectSingle<number>(
 				"select caseId from tblOfficerCase where officerId=? limit 1;",
 				[this.id]
 			);
@@ -122,7 +122,7 @@ export default class Officer{
 					null
 				);
 			}
-			const _case=await Case.getCached(caseId,conn);
+			const _case=await Case.getCached(caseId,this.conn);
 			return new GetCaseResult(
 				GetCaseResultCode.Success,
 				_case
@@ -133,7 +133,6 @@ export default class Officer{
 				null
 			);
 		}finally{
-			conn?.release();
 		}
 	}
 	static async create(conn:DBConnection,id:number,code:string,createdBy:number):Promise<CreateResult>{
@@ -153,7 +152,7 @@ export default class Officer{
 			await conn.commit();
 			const officer=new Officer(insertId,conn);
 			officer.code=code;
-			Officer.setCache(officer);
+			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
 		}catch(err:any){
 			try{
@@ -199,7 +198,7 @@ export default class Officer{
 		}finally{
 		}
 	}
-	isOffline(){
+	isOffline():boolean{
 		return this.sockets.size==0;
 	}
 	addSocket(socket:Socket):void{
@@ -211,6 +210,10 @@ export default class Officer{
 			if(this.region){
 				this.region.removeOfficer(this);
 				this.region=null;
+			}
+			if(this.role){
+				this.role.removeOfficer(this);
+				this.role=null;
 			}
 		}
 	}
@@ -246,6 +249,19 @@ export default class Officer{
 		}
 		return result;
 	}
+	setRole(role:Role):number{
+		if(this.role!=null){
+			if(this.role==role){
+				return 1;
+			}else{
+				this.role.removeOfficer(this);
+			}
+		}
+		role.addOfficer(this);
+		this.role=role;
+		console.log(`[Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
+		return 0;
+	}
 	setRegion(region:Region):number{
 		if(this.region!=null){
 			if(this.region==region){
@@ -256,10 +272,10 @@ export default class Officer{
 		}
 		region.addOfficer(this);
 		this.region=region;
-		console.log(`[setRegion] officer.code=${this.code} region.code=${region.code}`);
+		console.log(`[Officer.setRegion] officer.code=${this.code} region.code=${region.code}`);
 		return 0;
 	}
-	updateLocation(x:number,y:number){
+	updateLocation(x:number,y:number):void{
 		this.x=x;
 		this.y=y;
 	}

@@ -47,6 +47,14 @@ function updateUI(key,params){
 	}
 	uiUpdater.run(params);
 }
+let joinButton=null;
+registerUIUpdater("joined",function([joined]){
+	if(joined){
+		joinButton.hide();
+	}else{
+		joinButton.show();
+	}
+});
 registerUIUpdater("caseComplete",function([caseId]){
 	caseList.removeData(caseId);
 });
@@ -54,7 +62,6 @@ registerUIUpdater("caseAssigned",function([caseId]){
 	caseList.scroll(0);
 });
 registerUIUpdater("position",function([officerId]){
-	console.log("UIUpdate position");
 	const policeList=policeMap.values();
 	ctx.clearRect(0,0,canvas.width,canvas.height);
 	for(const police of policeList){
@@ -64,6 +71,10 @@ registerUIUpdater("position",function([officerId]){
 		ctx.fill();
 		ctx.strokeText(police.officerId,police.x,police.y);
 	}
+});
+socket.on("disconnect",(reason)=>{
+	console.log(`Diconnected reason=${reason}`);
+	setJoined(false);
 });
 socket.on("caseComplete",(caseId)=>{
 	setCaseComplete(caseId);
@@ -107,11 +118,15 @@ function updatePoliceLocation(officerId,x,y){
 let ctx;
 let canvas;
 socket.on("updateColleagueLocation",({officerId,latitude,longitude})=>{
-	console.log("updateColleagueLocation officerId="+officerId);
 	updatePoliceLocation(officerId,latitude,longitude);
 	updateUI("position",[officerId]);
 });
-let myOfficerId=null;
+//let myOfficerId=null;
+let joined=false;
+function setJoined(b){
+	joined=b;
+	updateUI("joined",[joined]);
+}
 let positionX,positionY;
 let lastPositionSendTime=0;
 let sendPositionTimeout=null;
@@ -120,13 +135,27 @@ function main(){
 	const inputPanel=document.createElement("div");
 	{
 		const e=inputPanel;
-		const inputBox=document.createElement("input");
+		const codeBox=document.createElement("input");
 		{
-			const e=inputBox;
-			e.value="P-1000";
+			const e=codeBox;
+			e.value="P-0001";
 			e.type="text";
 		}
-		e.appendChild(inputBox);
+		e.appendChild(codeBox);
+		const regionBox=document.createElement("input");
+		{
+			const e=regionBox;
+			e.value="DEFAULT";
+			e.type="text";
+		}
+		e.appendChild(regionBox);
+		const roleBox=document.createElement("input");
+		{
+			const e=roleBox;
+			e.value="NONE";
+			e.type="text";
+		}
+		e.appendChild(roleBox);
 		const submitBox=document.createElement("div");
 		{
 			const e=submitBox;
@@ -134,12 +163,21 @@ function main(){
 			e.style.padding="2px";
 			e.style.cursor="pointer";
 			e.innerText="Join";
+			joinButton={
+				show:()=>{
+					submitBox.style.display="block";
+				},
+				hide:()=>{
+					submitBox.style.display="none";
+				}
+			};
 			e.addEventListener("click",(e)=>{
-				myOfficerId=inputBox.value;
 				socket.emit("join",{
-					officerId:myOfficerId,
-					region:"DEFAULT"
+					officerId:codeBox.value,
+					region:regionBox.value,
+					role:roleBox.value
 				});
+				setJoined(true);
 			});
 		}
 		e.appendChild(submitBox);
@@ -153,7 +191,7 @@ function main(){
 		e.style.border="1px solid #000";
 		const MAX_DELAY=80;
 		canvas.addEventListener("mousemove",(e)=>{
-			if(myOfficerId==null){
+			if(!joined){
 				return;
 			}
 			positionX=e.clientX;
@@ -163,7 +201,7 @@ function main(){
 				const dt=t-lastPositionSendTime;
 				if(dt>MAX_DELAY-1){
 					socket.emit("sendMyLocation",{
-						officerId:myOfficerId,
+						//officerId:myOfficerId,
 						latitude:positionX,
 						longitude:positionY
 					});
@@ -171,7 +209,7 @@ function main(){
 				}else{
 					sendPositionTimeout=setTimeout(function(){
 						socket.emit("sendMyLocation",{
-							officerId:myOfficerId,
+							//officerId:myOfficerId,
 							latitude:positionX,
 							longitude:positionY
 						});
