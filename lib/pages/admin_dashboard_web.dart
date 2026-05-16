@@ -25,11 +25,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   // 경찰관 ID를 Key로, 자바스크립트 마커 객체를 Value로 저장하는 딕셔너리
   final Map<String, js.JSObject> _officerMarkers = {};
 
-  @override
-  void dispose() {
-  _socket?.dispose(); // 페이지 종료 시 소켓 연결 해제
-  super.dispose();
-  }
+  // 상태 관리 플래그
+  bool _isReportListOpen = false;
 
   @override
   void initState() {
@@ -45,10 +42,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           ..style.width = '100%' // 화면 너비 100%
           ..style.height = '100%'; // 화면 높이 100%
 
-        // 플러터가 위에서 만든 div를 화면(DOM)에 완전히 그릴 때까지 기다린 후 지도를 띄움
-        _waitForMapDivAndInitialize(div);
-
-        _connectWebSocket(); // 소켓 연결
+        // 네이버 API 키 노출을 막기 위해 스크립트를 동적으로 삽입
+        _injectNaverMapScript(div);
 
         // 생성된 div 요소를 플러터 프레임워크에 반환하여 렌더링합니다.
         return div;
@@ -56,9 +51,36 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
   }
 
+  /// launch.json의 환경 변수를 읽어 HTML에 네이버 지도 스크립트를 동적으로 삽입
+  void _injectNaverMapScript(web.HTMLDivElement div) {
+    // 환경 변수에서 웹 전용 클라이언트 ID 로드 (깃허브 노출 방지)
+    final String clientId = const String.fromEnvironment('NAVER_MAP_WEB_CLIENT_ID');
+    
+    // 이미 스크립트가 로드되어 window.naver 객체가 존재한다면 중복 삽입 방지
+    if (js.globalContext['naver'] != null) {
+      _waitForMapDivAndInitialize(div);
+      return;
+    }
+
+    // HTML의 <script> 태그 객체를 동적으로 생성
+    final script = web.document.createElement('script') as web.HTMLScriptElement;
+    script.src = 'https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=$clientId';
+    script.type = 'text/javascript';
+    script.async = true;
+
+    // 자바스크립트 스크립트 파일이 네트워크를 통해 완전히 다운로드 및 로드가 완료되었을 때 실행할 콜백
+    script.onload = () {
+      if (mounted) {
+        _waitForMapDivAndInitialize(div);
+      }
+    }.toJS; // dart:js_interop과 호환되도록 자바스크립트 함수 형태로 변환
+
+    // HTML의 <head> 태그 내부에 위에서 만든 <script> 태그를 자식 요소로 넣음
+    web.document.head?.appendChild(script);
+  }
+
   /// HTML 요소 렌더링 대기 (경쟁 상태 방지)
   /// 컴퓨터 성능이나 네트워크에 따라 HTML div가 화면에 그려지는 속도가 다를 수 있음
-  /// div가 존재하지 않는데 지도를 띄우려 하면 에러가 발생하므로, 확실히 그려졌는지 확인하는 함수
   void _waitForMapDivAndInitialize(web.HTMLDivElement div) {
     // 0.05초(50ms) 간격으로 화면을 계속 확인
     Timer.periodic(const Duration(milliseconds: 50), (timer) {
@@ -68,104 +90,157 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       // 요소가 찾아졌다면 (화면에 div가 성공적으로 그려졌다면)
       if (element != null) {
         timer.cancel(); // 더 이상의 확인 작업(타이머)을 중지
-        _initializeNaverMap(div); // 안전하게 네이버 지도 초기화를 시작
+        _initializeNaverMap(div); // 지도 초기화
+        _connectWebSocket(); // 소켓 연결
       }
     });
   }
 
   /// 네이버 지도 객체 생성 및 JS 연동
-  /// dart:js_interop을 활용하여 index.html에 추가된 네이버 지도 JS API를 호출
   void _initializeNaverMap(web.HTMLDivElement div) {
-    // 브라우저의 전역 객체(window)에서 'naver' 객체를 가져옴
     final naver = js.globalContext['naver'] as js.JSObject?;
     
-    // index.html에 네이버 지도 스크립트가 정상적으로 로드되었는지 확인
     if (naver != null) {
-      // naver.maps 객체에 접근
       final maps = naver['maps'] as js.JSObject;
 
       // 중심 좌표 설정 (광운대학교)
       final center = maps.callMethod('LatLng'.toJS, 37.6194.toJS, 127.0598.toJS);
       
-      // 지도의 초기 옵션(줌 레벨, 중심 좌표 등)을 JS 객체 형태로 변환
       final mapOptions = {
         'center': center,
         'zoom': 13.toJS,
       }.jsify();
 
-      // JS의 "new naver.maps.Map(div, options)"를 실행하는 것과 동일한 코드
       final mapConstructor = maps['Map'] as js.JSFunction;
       final mapInstance = mapConstructor.callAsConstructor(div as js.JSAny, mapOptions as js.JSAny);
       
-      // 추후 WebSocket으로 현장 경찰관의 위치를 수신했을 때 지도를 제어(마커 찍기 등)할 수 있도록,
-      // 생성된 지도 객체를 전역 변수(window.adminMap)로 임시 저장
       js.globalContext['adminMap'] = mapInstance;
     } else {
-      debugPrint('⚠️ [Error] 네이버 지도 스크립트(index.html)를 찾을 수 없습니다.');
+      debugPrint('⚠️ [Error] 네이버 지도 스크립트 로드 실패');
     }
   }
 
+  /// 웹소켓 연결을 초기화하고 실시간 이벤트 리스너를 설정하는 함수
   void _connectWebSocket() {
-  final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
+    // 환경변수(launch.json)에 등록된 백엔드 웹소켓 서버 URL을 로드
+    final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
+    debugPrint('[Debug] 서버 연결 시도 주소: $serverUrl');
 
-  _socket = io.io(serverUrl, <String, dynamic>{
-    'transports': ['websocket'],
-    'autoConnect': false,
-  });
-
-  _socket?.onConnect((_) {
-    debugPrint('[Web Admin] WebSocket connected');
-    // 관리자(Admin) 권한으로 접속했음을 서버에 알림
-    _socket?.emit('join', {
-      'officerId': 'ADMIN-001',
-      'role': 'ADMIN', 
+    // Socket.IO 클라이언트 생성 (웹 환경에서의 호환성을 위해 websocket 전송방식을 강제 지정)
+    _socket = io.io(serverUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': false, // 인스턴스 설정 후 명시적으로 connect()를 호출하기 위함
     });
-  });
 
-  // 서버로부터 누군가의 위치 데이터를 수신했을 때
-  _socket?.on('updateColleagueLocation', (data) {
-    final String officerId = data['officerId'].toString();
-    final double lat = (data['latitude'] as num).toDouble();
-    final double lng = (data['longitude'] as num).toDouble();
-    
-    _updateOfficerMarkerJS(officerId, lat, lng);
-  });
+    // 1. 서버와 소켓 핸드셰이크(연결)가 최종 성공했을 때 실행되는 콜백
+    _socket?.onConnect((_) {
+      debugPrint('[Debug] 웹소켓 연결 성공! (세션 ID: ${_socket?.id})');
+      
+      // [관리자(ADMIN) 권한으로 세션 방(Room)에 입장
+      // role이 'ADMIN'일 경우, 서버는 특정 관할 구역에 국한되지 않고 모든 경찰관의 위치를 브로드캐스트
+      _socket?.emit('join', {
+        'officerId': 'ADMIN-001',
+        'region': 'ALL', // ADMIN 권한이므로 서버에서 무시되지만 프로토콜 규격을 위해 전달
+        'role': 'ADMIN'
+      });
+      debugPrint('[Debug] Join 이벤트 전송 완료 (Role: ADMIN)');
+    });
 
-  _socket?.connect();
+    // 네트워크 불안정 등으로 인한 소켓 연결 실패 시 로그 출력
+    _socket?.onConnectError((error) {
+      debugPrint('[Debug] 연결 에러 발생: $error');
+    });
+
+    // 2. 서버로부터 현장 경찰관의 실시간 좌표 데이터를 수신했을 때 (`updateColleagueLocation`)
+    _socket?.on('updateColleagueLocation', (data) {
+      debugPrint('[Debug] 위치 데이터 수신함: $data');
+      
+      try {
+        // 서버에서 받아온 JSON Object 보따리에서 개별 데이터 파싱
+        final String officerId = data['officerId'].toString();
+        final double lat = (data['latitude'] as num).toDouble();
+        final double lng = (data['longitude'] as num).toDouble();
+        
+        // 파싱된 데이터를 기반으로 자바스크립트 지도 위에 마커를 투영하는 함수 호출
+        _updateOfficerMarkerJS(officerId, lat, lng);
+      } catch (e) {
+        debugPrint('[Debug] 데이터 파싱 에러: $e');
+      }
+    });
+
+    // 3. 현장 경찰관의 긴급 무전 메시지 수신 시 처리
+    _socket?.on('receiveRadioMessage', (data) {
+      if (!mounted) return;
+
+      final String officerId = data['officerId'].toString();
+      final String region = data['region'].toString();
+      final String message = data['message'].toString();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.campaign, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(child: Text('[$region] $officerId: $message')),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent, 
+        ),
+      );
+    });
+
+    // 설정된 리스너들을 바탕으로 실제 서버 연결 세션을 활성화
+    _socket?.connect();
   }
 
+  /// [핵심 로직] dart:js_interop 기술을 활용하여 브라우저 런타임의 네이버 지도 JS 객체를 직접 제어하는 함수
   void _updateOfficerMarkerJS(String officerId, double lat, double lng) {
-    // window.naver 객체와 이전에 저장해둔 window.adminMap 객체를 가져옴
+    // index.html 레이어에 로드된 window.naver 객체와 지도 초기화 시 저장해둔 window.adminMap 객체를 가져옴
     final naver = js.globalContext['naver'] as js.JSObject?;
     final adminMap = js.globalContext['adminMap'] as js.JSObject?;
 
-    if (naver == null || adminMap == null) return;
+    // 지도가 아직 화면에 그려지지 않았거나 스크립트 로딩이 누락되었다면 예외 처리 (C++의 Null Check 개념)
+    if (naver == null || adminMap == null) {
+      debugPrint('[Error] 지도 객체가 초기화되지 않았습니다.');
+      return;
+    }
 
+    // 네이버 지도 라이브러리의 내부 네임스페이스 및 LatLng 생성자 함수 획득
     final maps = naver['maps'] as js.JSObject;
-  
-    // JS의 naver.maps.LatLng(lat, lng) 객체 생성
+    
+    // JS 문법의 [ new naver.maps.LatLng(lat, lng) ] 객체 생성을 상호운용성(Interop) 타입 변환(.toJS)을 통해 실행
     final position = maps.callMethod('LatLng'.toJS, lat.toJS, lng.toJS);
 
+    // 이미 마커 딕셔너리(_officerMarkers)에 등록되어 관리 중인 경찰관인지 확인
     if (_officerMarkers.containsKey(officerId)) {
-      // 이미 마커가 존재한다면 위치만 이동 (JS의 marker.setPosition(position) 호출)
+      // 3-A. 기존에 이미 존재하던 마커라면, 객체를 재생성하지 않고 좌표만 슬라이딩 이동 (렌더링 최적화 및 깜빡임 방지)
+      debugPrint('[Debug] 기존 마커 이동: $officerId ($lat, $lng)');
       final existingMarker = _officerMarkers[officerId]!;
+      
+      // JS 문법의 [ marker.setPosition(position) ] 함수 호출
       existingMarker.callMethod('setPosition'.toJS, position);
     } else {
-      // 새로운 경찰관이라면 JS의 naver.maps.Marker 객체를 새로 생성
+      // 3-B. 새롭게 접속한 경찰관이라면 자바스크립트 기반의 네이버 지도 마커 객체를 신규 생성
+      debugPrint('[Debug] 새 마커 생성: $officerId ($lat, $lng)');
+      
+      // Dart의 Map 구조체를 자바스크립트가 읽을 수 있는 순수 Object 객체로 변환 (.jsify())
       final markerOptions = {
         'position': position,
         'map': adminMap,
-        // 타이틀이나 아이콘 등은 나중에 추가
+        'title': officerId, // 마우스를 올렸을 때 경찰관 고유 ID 툴팁 노출
       }.jsify();
 
+      // JS 문법의 [ new naver.maps.Marker(options) ] 생성자 함수 호출 및 인스턴스화
       final markerConstructor = maps['Marker'] as js.JSFunction;
       final newMarker = markerConstructor.callAsConstructor(markerOptions as js.JSAny);
 
-      // 딕셔너리에 저장
+      // 관리를 위해 딕셔너리에 경찰관 ID(Key)와 생성된 JS 마커 객체(Value)를 매핑하여 보관
       _officerMarkers[officerId] = newMarker as js.JSObject;
     }
   }
-  bool _isReportListOpen = false;
 
   void _toggleReportList() {
     setState(() {
@@ -173,37 +248,38 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     });
   }
 
-
-
-  // 신고 접수 버튼 클릭시 상태 표시
   void _showReportAlert() {
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      // 2초간 딜레이
-      Future.delayed(const Duration(seconds: 2), () {
-        if (context.mounted) {
-          Navigator.of(context).pop();
-        }
-      });
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (context.mounted) {
+            Navigator.of(context).pop();
+          }
+        });
 
-      return AlertDialog(
-        backgroundColor: const Color.fromARGB(255, 85, 117, 169),
-        content: const Text(
-          '신고 발생 위치에 마우스를 클릭하세요.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.white70),
-        ),
-      );
-    },
-  );
-}
+        return const AlertDialog(
+          backgroundColor: Color.fromARGB(255, 85, 117, 169),
+          content: Text(
+            '신고 발생 위치에 마우스를 클릭하세요.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _socket?.dispose(); // 페이지 종료 시 소켓 연결 해제
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // [상단 앱바] 관리자 페이지(상황실) 스타일의 어두운 UI 적용
       appBar: AppBar(
         title: const Text(
           'POLWEB - 종합 상황실 대시보드', 
@@ -213,7 +289,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         foregroundColor: Colors.white,
         elevation: 4,
         actions: [
-          // 대쉬보드에서 사용하는 신고 접수 버튼(마찬가지로 백엔드 연동 필요)
           Tooltip(
             message: '클릭한 위치에 신고를 접수합니다.',
             child: TextButton.icon(
@@ -222,7 +297,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             label: const Text('신고 접수', style: TextStyle(color: Colors.white)),
             ),
           ),
-          // 사건 내용들 확인할 수 있는 리스트
           Tooltip(
             message: '발생한 사건 내역을 확인합니다.',
             child: TextButton.icon(
@@ -231,13 +305,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             label: const Text('사건 목록 조회', style: TextStyle(color: Colors.white)),
             ),
           ),
-          // 전체 무전 버튼 (향후 백엔드 WebSocket 연결을 통해 전체 방송 기능 구현 예정)
           Tooltip(
             message: '관할 지역 경찰관에게 메세지를 전파합니다.',
             child : TextButton.icon(
-            onPressed: () {
-              // TODO: 전체 관할 구역에 긴급 무전(이벤트)을 전송하는 로직 추가
-            },
+            onPressed: () {},
             icon: const Icon(Icons.campaign, color: Colors.redAccent),
             label: const Text('전체 긴급 무전', style: TextStyle(color: Colors.white)),
             ),
@@ -254,21 +325,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       
       body: Stack(
         children: [
-          // [레이어 1: 지도 영역] 화면 전체를 꽉 채우는 배경
           Positioned.fill(
             child: kIsWeb 
-                // 웹 환경에서는 우리가 위에서 정의한 HTML 뷰(_viewId)를 렌더링
                 ? HtmlElementView(viewType: _viewId)
-                // 모바일 환경에서 잘못 호출되었을 경우를 대비한 안전 장치
                 : const Center(child: Text('이 페이지는 웹 환경에서만 지원됩니다.')),
           ),
 
-          // [레이어 2: 실시간 현황판 오버레이] 지도 좌측 상단에 떠 있는 상황 요약 카드
           Positioned(
             top: 24,
             left: 24,
             child: Card(
-              elevation: 8, // 카드에 그림자 효과 부여
+              elevation: 8,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: const Padding(
                 padding: EdgeInsets.all(20.0),
