@@ -17,16 +17,12 @@ class AdminDashboardPage extends StatefulWidget {
 }
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
-  // HtmlElementView와 실제 생성할 HTML div 요소를 연결해주는 고유 식별자(ID)
-  final String _viewId = 'naver-map-web-view'; 
-
+  final String _viewId = 'naver-map-web-view'; // HtmlElementView와 실제 생성할 HTML div 요소를 연결해주는 고유 식별자(ID)
   io.Socket? _socket;
-
-  // 경찰관 ID를 Key로, 자바스크립트 마커 객체를 Value로 저장하는 딕셔너리
-  final Map<String, js.JSObject> _officerMarkers = {};
-
-  // 상태 관리 플래그
-  bool _isReportListOpen = false;
+  final Map<String, js.JSObject> _officerMarkers = {}; // 경찰관 ID를 Key로, 자바스크립트 마커 객체를 Value로 저장하는 딕셔너리
+  final Set<String> _connectedRegions = {}; // 현재 접속 중인 지역 채널들을 중복 없이 저장하는 Set
+  final Map<String, String> _officerRegions = {}; // 퇴장 시 채널 목록을 동적으로 계산하기 위해 경찰관 ID별 지역을 저장하는 Map
+  bool _isReportListOpen = false; // 상태 관리 플래그
 
   @override
   void initState() {
@@ -45,13 +41,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         // 네이버 API 키 노출을 막기 위해 스크립트를 동적으로 삽입
         _injectNaverMapScript(div);
 
-        // 생성된 div 요소를 플러터 프레임워크에 반환하여 렌더링합니다.
+        // 생성된 div 요소를 플러터 프레임워크에 반환하여 렌더링
         return div;
       });
     }
   }
 
-  /// launch.json의 환경 변수를 읽어 HTML에 네이버 지도 스크립트를 동적으로 삽입
+  // launch.json의 환경 변수를 읽어 HTML에 네이버 지도 스크립트를 동적으로 삽입
   void _injectNaverMapScript(web.HTMLDivElement div) {
     // 환경 변수에서 웹 전용 클라이언트 ID 로드 (깃허브 노출 방지)
     final String clientId = const String.fromEnvironment('NAVER_MAP_WEB_CLIENT_ID');
@@ -64,6 +60,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     // HTML의 <script> 태그 객체를 동적으로 생성
     final script = web.document.createElement('script') as web.HTMLScriptElement;
+    
+    // 최신 네이버 지도 사양에 맞춘 ncpKeyId 파라미터 적용
     script.src = 'https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=$clientId';
     script.type = 'text/javascript';
     script.async = true;
@@ -136,7 +134,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     _socket?.onConnect((_) {
       debugPrint('[Debug] 웹소켓 연결 성공! (세션 ID: ${_socket?.id})');
       
-      // [관리자(ADMIN) 권한으로 세션 방(Room)에 입장
+      // 관리자(ADMIN) 권한으로 세션 방(Room)에 입장합니다.
       // role이 'ADMIN'일 경우, 서버는 특정 관할 구역에 국한되지 않고 모든 경찰관의 위치를 브로드캐스트
       _socket?.emit('join', {
         'officerId': 'ADMIN-001',
@@ -151,7 +149,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       debugPrint('[Debug] 연결 에러 발생: $error');
     });
 
-    // 2. 서버로부터 현장 경찰관의 실시간 좌표 데이터를 수신했을 때 (`updateColleagueLocation`)
+    // 2. 서버로부터 현장 경찰관의 실시간 좌표 데이터를 수신했을 때 (updateColleagueLocation)
     _socket?.on('updateColleagueLocation', (data) {
       debugPrint('[Debug] 위치 데이터 수신함: $data');
       
@@ -160,49 +158,57 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final String officerId = data['officerId'].toString();
         final double lat = (data['latitude'] as num).toDouble();
         final double lng = (data['longitude'] as num).toDouble();
+        final String? regionCode = data['region']?.toString();
         
+        // 구역 코드를 UI에 보여줄 한글 지역명으로 변환
+        String? regionName;
+        if (regionCode == 'SEOUL_NOWON') {
+          regionName = '노원구';
+        } else if (regionCode == 'SEOUL_DOBONG') {
+          regionName = '도봉구';
+        } else if (regionCode != null) {
+          regionName = regionCode;
+        }
+
         // 파싱된 데이터를 기반으로 자바스크립트 지도 위에 마커를 투영하는 함수 호출
         _updateOfficerMarkerJS(officerId, lat, lng);
+
+        // 지역 정보를 상태 변수에 등록하고 화면을 다시 그리도록 알림
+        setState(() {
+          if (regionName != null) {
+            _officerRegions[officerId] = regionName; // 경찰관별 지역 매핑 저장
+            _connectedRegions.add(regionName);      // 활성화된 채널 목록에 추가
+          }
+        });
       } catch (e) {
         debugPrint('[Debug] 데이터 파싱 에러: $e');
       }
     });
 
-    // 3. 현장 경찰관의 긴급 무전 메시지 수신 시 처리
-    _socket?.on('receiveRadioMessage', (data) {
-      if (!mounted) return;
-
-      final String officerId = data['officerId'].toString();
-      final String region = data['region'].toString();
-      final String message = data['message'].toString();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.campaign, color: Colors.white),
-              const SizedBox(width: 8),
-              Expanded(child: Text('[$region] $officerId: $message')),
-            ],
-          ),
-          duration: const Duration(seconds: 4),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.redAccent, 
-        ),
-      );
+    // 서버로부터 특정 경찰관의 연결 해제(종료) 이벤트를 수신했을 때 처리
+    _socket?.on('removeColleagueLocation', (data) {
+      debugPrint('[Debug] 연결 해제 데이터 수신함: $data');
+      try {
+        final String officerId = data['officerId'].toString();
+        
+        // 지도에서 마커를 지우고 카운트를 빼는 함수 호출
+        _removeOfficerMarkerJS(officerId);
+      } catch (e) {
+        debugPrint('[Debug] 연결 해제 처리 에러: $e');
+      }
     });
 
     // 설정된 리스너들을 바탕으로 실제 서버 연결 세션을 활성화
     _socket?.connect();
   }
 
-  /// [핵심 로직] dart:js_interop 기술을 활용하여 브라우저 런타임의 네이버 지도 JS 객체를 직접 제어하는 함수
+  // dart:js_interop 기술을 활용하여 브라우저 런타임의 네이버 지도 JS 객체를 직접 제어하는 함수
   void _updateOfficerMarkerJS(String officerId, double lat, double lng) {
     // index.html 레이어에 로드된 window.naver 객체와 지도 초기화 시 저장해둔 window.adminMap 객체를 가져옴
     final naver = js.globalContext['naver'] as js.JSObject?;
     final adminMap = js.globalContext['adminMap'] as js.JSObject?;
 
-    // 지도가 아직 화면에 그려지지 않았거나 스크립트 로딩이 누락되었다면 예외 처리 (C++의 Null Check 개념)
+    // 지도가 아직 화면에 그려지지 않았거나 스크립트 로딩이 누락되었다면 예외 처리
     if (naver == null || adminMap == null) {
       debugPrint('[Error] 지도 객체가 초기화되지 않았습니다.');
       return;
@@ -239,7 +245,155 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
       // 관리를 위해 딕셔너리에 경찰관 ID(Key)와 생성된 JS 마커 객체(Value)를 매핑하여 보관
       _officerMarkers[officerId] = newMarker as js.JSObject;
+
+      // 새로운 마커가 추가되었으므로 인원수 UI 갱신을 위해 setState 호출
+      setState(() {});
     }
+  }
+
+  // 특정 경찰관의 연결 해제 시 지도에서 마커를 지우고 실시간 현황을 갱신하는 함수
+  void _removeOfficerMarkerJS(String officerId) {
+    if (_officerMarkers.containsKey(officerId)) {
+      final existingMarker = _officerMarkers[officerId]!;
+      
+      // 네이버 지도 JavaScript API 스펙에 맞추어 마커를 지도 레이어에서 완전히 제거
+      existingMarker.callMethod('setMap'.toJS, null);
+      
+      setState(() {
+        // 딕셔너리에서 퇴장한 경찰관 데이터 삭제 (자동으로 카운트 감소)
+        _officerMarkers.remove(officerId);
+        _officerRegions.remove(officerId);
+        
+        // 현재 남아있는 다른 경찰관들의 지역 정보로 채널 목록을 동적 새로고침
+        _connectedRegions.clear();
+        _connectedRegions.addAll(_officerRegions.values);
+      });
+      
+      debugPrint('[Debug] 마커 제거 및 실시간 채널 현황 갱신 완료: $officerId');
+    }
+  }
+
+  // 전체 및 특정 관할 구역을 선택해 무전 메시지를 전파하는 팝업 다이얼로그
+  void _showRadioDialog() {
+    final TextEditingController messageController = TextEditingController();
+    String selectedRegion = 'ALL'; // 기본 선택값을 'ALL'(전 지역)로 설정
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.campaign, color: Colors.redAccent),
+                  SizedBox(width: 8),
+                  Text('전체 무전 메시지 전파', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('수신 관할 지역 선택', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  // 지역 선택 드롭다운 버튼
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedRegion,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    // 💡 드롭다운 리스트에 '전 지역' 옵션 추가
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'ALL',
+                        child: Text('서울 전 지역'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'SEOUL_NOWON',
+                        child: Text('서울 노원구'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'SEOUL_DOBONG',
+                        child: Text('서울 도봉구'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() {
+                          selectedRegion = value;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('무전 메시지 내용 입력', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: messageController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: '현장 경찰관들에게 전파할 지시 사항을 입력하세요.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('취소', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromARGB(255, 85, 117, 169),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    final String text = messageController.text.trim();
+                    if (text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('무전 메시지 내용을 입력해 주세요.')),
+                      );
+                      return;
+                    }
+
+                    final String currentTimestamp = DateTime.now().toIso8601String();
+
+                    if (_socket != null && _socket!.connected) {
+                      // 선택된 region 값('ALL' 또는 특정 지역명)을 그대로 서버에 전송
+                      _socket!.emit('sendRadioMessage', {
+                        'officerId': 'ADMIN-001',
+                        'region': selectedRegion, 
+                        'message': text,
+                        'timestamp': currentTimestamp,
+                      });
+                      
+                      Navigator.of(context).pop();
+
+                      // 선택한 옵션에 따라 완료 스낵바 문구를 다르게 표시
+                      final String resultText = selectedRegion == 'ALL' 
+                          ? '전체 관할 구역으로' 
+                          : '[$selectedRegion] 구역으로';
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('$resultText 무전 메시지가 전파되었습니다.')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('서버와 소켓 연결이 끊어져 있습니다.')),
+                      );
+                    }
+                  },
+                  child: const Text('전송'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _toggleReportList() {
@@ -271,9 +425,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  /// 대시보드 페이지가 종료되거나 위젯이 해제될 때 호출되는 함수
   @override
   void dispose() {
-    _socket?.dispose(); // 페이지 종료 시 소켓 연결 해제
+    _socket?.dispose(); // 불필요한 웹소켓 커넥션을 명시적으로 차단하여 메모리 누수(Memory Leak) 방지
     super.dispose();
   }
 
@@ -306,11 +461,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
           Tooltip(
-            message: '관할 지역 경찰관에게 메세지를 전파합니다.',
+            message: '관할 지역 경찰관들에게 메세지를 전파합니다.',
             child : TextButton.icon(
-            onPressed: () {},
+            onPressed: _showRadioDialog,
             icon: const Icon(Icons.campaign, color: Colors.redAccent),
-            label: const Text('전체 긴급 무전', style: TextStyle(color: Colors.white)),
+            label: const Text('전체 무전 메시지', style: TextStyle(color: Colors.white)),
             ),
           ),
           const SizedBox(width: 16),
@@ -337,18 +492,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             child: Card(
               elevation: 8,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: const Padding(
-                padding: EdgeInsets.all(20.0),
+              child: Padding(
+                padding: const EdgeInsets.all(20.0), // 내부 수치는 고정이므로 const 유지
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('실시간 현장 현황', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 16),
-                    Text('👮 활동 중인 경찰관: 12명', style: TextStyle(fontSize: 16, color: Colors.blue)),
-                    SizedBox(height: 8),
-                    Text('🚨 위협 감지: 1건', style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 8),
-                    Text('📡 연결된 채널: 노원구, 도봉구', style: TextStyle(fontSize: 16, color: Colors.black87)),
+                    const Text('실시간 현장 현황', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Text('👮 활동 중인 경찰관: ${_officerMarkers.length}명', 
+                        style: const TextStyle(fontSize: 16, color: Colors.blue)),
+                    const SizedBox(height: 8),
+                    const Text('🚨 위협 감지: 0건', 
+                        style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text('📡 연결된 채널: ${_connectedRegions.isEmpty ? '없음' : _connectedRegions.join(', ')}', 
+                        style: const TextStyle(fontSize: 16, color: Colors.black87)),
                   ],
                 ),
               ),
