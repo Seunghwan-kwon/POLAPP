@@ -10,10 +10,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 class Region {
-    constructor(id, code, conn) {
+    constructor(id, code) {
         this.id = id;
         this.code = code;
-        this.conn = conn;
         this.officers = new Map();
     }
     addOfficer(officer) {
@@ -33,7 +32,7 @@ class Region {
                     return null;
                 }
                 else {
-                    region = new Region(id, code, conn);
+                    region = new Region(id, code);
                     Region.cached.set(id, region);
                 }
             }

@@ -64,9 +64,8 @@ export default class Officer{
 	region:Region|null;
 	role:Role|null;
 	sockets:Map<string,Socket>
-	conn:DBConnection;
 	appServer:AppServer;
-	constructor(id:number,conn:DBConnection,appServer:AppServer){
+	constructor(id:number,appServer:AppServer){
 		this.id=id;
 		this.x=0;
 		this.y=0;
@@ -74,7 +73,6 @@ export default class Officer{
 		this.role=null;
 		this.code="(unknown)";
 		this.sockets=new Map<string,Socket>();
-		this.conn=conn;
 		this.appServer=appServer;
 	}
 	static cached=new Map<number,Officer|null>();
@@ -89,13 +87,13 @@ export default class Officer{
 				Officer.cached.set(id,null);
 				return null;
 			}
-			officer=new Officer(id,conn,appServer);
+			officer=new Officer(id,appServer);
 			Officer.cached.set(id,officer);
 		}
 		return officer;
 	}
-	async getMatchingCode():Promise<string|null>{
-		const matchingCode=await this.conn.selectSingle<string>(
+	async getMatchingCode(conn:DBConnection):Promise<string|null>{
+		const matchingCode=await conn.selectSingle<string>(
 			"select matchingCode from tblOfficer where id=? limit 1;",[this.id]
 		);
 		return matchingCode;
@@ -115,9 +113,9 @@ export default class Officer{
 		officer.code=code;
 		return officer;
 	}
-	async getCase():Promise<GetCaseResult>{
+	async getCase(conn:DBConnection):Promise<GetCaseResult>{
 		try{
-			const caseId=await this.conn.selectSingle<number>(
+			const caseId=await conn.selectSingle<number>(
 				"select caseId from tblOfficerCase where officerId=? limit 1;",
 				[this.id]
 			);
@@ -127,7 +125,7 @@ export default class Officer{
 					null
 				);
 			}
-			const _case=await Case.getCached(caseId,this.conn);
+			const _case=await Case.getCached(caseId,conn);
 			return new GetCaseResult(
 				GetCaseResultCode.Success,
 				_case
@@ -155,7 +153,7 @@ export default class Officer{
 				);
 			}
 			await conn.commit();
-			const officer=new Officer(insertId,conn,appServer);
+			const officer=new Officer(insertId,appServer);
 			officer.code=code;
 			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
@@ -176,31 +174,30 @@ export default class Officer{
 		}finally{
 		}
 	}
-	async remove(updatedBy:number):Promise<RemoveResult>{
+	async remove(updatedBy:number,conn:DBConnection):Promise<RemoveResult>{
 		try{
-			await this.conn.beginTransaction();
-			const changedCount=await this.conn.update(
+			await conn.beginTransaction();
+			const changedCount=await conn.update(
 				"update tblOfficer set isActive=0 where id=? and isActive=1 limit 1;",
 				[this.id]
 			);
 			if(changedCount!==1){
-				await this.conn.rollback();
+				await conn.rollback();
 				return new RemoveResult(
 					RemoveResultCode.UpdateFailed
 				);
 			}
-			await this.conn.commit();
+			await conn.commit();
 			return new RemoveResult(
 				RemoveResultCode.Success
 			);
 		}catch(ex1){
 			try{
-				await this.conn?.rollback();
+				await conn.rollback();
 			}catch{}
 			return new RemoveResult(
 				RemoveResultCode.Exception1
 			);
-		}finally{
 		}
 	}
 	isOffline():boolean{

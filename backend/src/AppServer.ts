@@ -36,13 +36,16 @@ export default class AppServer{
 	}
 	async getAdminRole():Promise<Role|null>{
 		if(this.adminRole==null){
+			let conn;
 			try{
-				const conn=await getDBConnection();
+				conn=await getDBConnection();
 				const role=await Role.findByCode("ADMIN",conn);
 				this.adminRole=role;
 			}catch(ex){
 				console.error(ex);
 				return null;
+			}finally{
+				conn?.release();
 			}
 		}
 		return this.adminRole;
@@ -97,8 +100,9 @@ export default class AppServer{
 		this.updatedOfficers.clear();
 	}
 	async setOfficerJoined(officerCode:string,regionCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
+		let conn;
 		try{
-			const conn=await getDBConnection();
+			conn=await getDBConnection();
 			const officer=await Officer.findByCode(conn,officerCode,this);
 			if(officer==null){
 				console.log(`[setOfficerJoined] officer=null`);
@@ -130,6 +134,8 @@ export default class AppServer{
 			console.error(e);
 			console.log(`[${getDateStr()}] [setOfficerJoined] exception=${e.toString()}`);
 			return null;
+		}finally{
+			conn?.release();
 		}
 	}
 	async setOfficerOffline(officer:Officer):Promise<void>{
@@ -168,8 +174,9 @@ export default class AppServer{
 			}
 			return 0;
 		}else{
+			let conn;
 			try{
-				const conn=await getDBConnection();
+				conn=await getDBConnection();
 	      			const region=await Region.findByCode(regionCode,conn);
 				if(region==null){
 					console.log(`[pushPendingMessage] No such region code=${regionCode}`);
@@ -187,6 +194,8 @@ export default class AppServer{
 			}catch(e){
 				console.error(e);
 				return-1;
+			}finally{
+				conn?.release();
 			}
 		}
 	}

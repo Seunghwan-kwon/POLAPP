@@ -4,11 +4,9 @@ export default class Region{
 	id:number;
 	code:string;
 	officers:Map<number,Officer>;
-	conn:DBConnection;
-	constructor(id:number,code:string,conn:DBConnection){
+	constructor(id:number,code:string){
 		this.id=id;
 		this.code=code;
-		this.conn=conn;
 		this.officers=new Map<number,Officer>();
 	}
 	addOfficer(officer:Officer):void{
@@ -27,7 +25,7 @@ export default class Region{
 				Region.cached.set(id,null);
 				return null;
 			}else{
-				region=new Region(id,code,conn);
+				region=new Region(id,code);
 				Region.cached.set(id,region);
 			}
 		}

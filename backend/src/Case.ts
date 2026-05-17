@@ -42,10 +42,8 @@ class GetOfficerIdsResult{
 export default class Case{
 	id:number;
 	state:number;
-	conn:DBConnection;
-	constructor(id:number,conn:DBConnection){
+	constructor(id:number){
 		this.id=id;
-		this.conn=conn;
 		this.state=-1;
 	}
 	static cached=new Map<number,Case|null>();
@@ -60,7 +58,7 @@ export default class Case{
 				Case.cached.set(id,null);
 				return null;
 			}
-			_case=new Case(id,conn);
+			_case=new Case(id);
 			Case.cached.set(id,_case);
 		}
 		return _case;
@@ -74,7 +72,7 @@ export default class Case{
 			if(insertId==null){
 				return null;
 			}
-			const _case=new Case(insertId,conn);
+			const _case=new Case(insertId);
 			Case.cached.set(insertId,_case);
 			return _case;
 		}catch(ex){
@@ -99,9 +97,9 @@ export default class Case{
 		}finally{
 		}
 	}
-	async assignOfficer(officerId:number,updatedBy:number):Promise<AssignOfficerResult>{
+	async assignOfficer(officerId:number,updatedBy:number,conn:DBConnection):Promise<AssignOfficerResult>{
 		try{
-			const insertId=await this.conn.insert(
+			const insertId=await conn.insert(
 				"insert into tblCaseOfficer(caseId,policeId,updatedBy)values(?,?,?);",
 				[this.id,officerId,updatedBy]
 			);
@@ -122,61 +120,62 @@ export default class Case{
 	}
 	async setIncomplete(updatedBy:number){
 	}
-	async hasPermission(updater:number):Promise<boolean>{
-		const hasPermission=await this.conn.selectSingle<number>(
+	async hasPermission(updater:number,conn:DBConnection):Promise<boolean>{
+		const hasPermission=await conn.selectSingle<number>(
 			"select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;",
 			[updater]
 		);
 		return hasPermission!=null;
 	}
-	async setState(state:number):Promise<number>{
-		const changedCount=await this.conn.update(
+	async setState(state:number,conn:DBConnection):Promise<number>{
+		const changedCount=await conn.update(
 			"update tblCase set state=? where id=? and state=?;",
 			[state,this.id,this.state]
 		);
 		return changedCount;
 	}
-	async setComplete(updatedBy:number):Promise<CaseSetCompleteResult>{
+	async setComplete(updatedBy:number,conn:DBConnection):Promise<CaseSetCompleteResult>{
 		try{
-			const hasPermission=await this.conn.selectSingle<number>(
+			await conn.beginTransaction();
+			const hasPermission=await conn.selectSingle<number>(
 				"select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;",
 				[updatedBy]
 			);
-			if(!await this.hasPermission(updatedBy)){
-				await this.conn.rollback();
+			if(!await this.hasPermission(updatedBy,conn)){
+				await conn.rollback();
 				return new CaseSetCompleteResult(
 					CaseSetCompleteResultCode.PermissionDenied,
 					-1
 				);
 			}
-			const changedCount=await this.setState(200);
+			const changedCount=await this.setState(200,conn);
 
 			if(changedCount!=1){
-				await this.conn.rollback();
+				await conn.rollback();
 				return new CaseSetCompleteResult(
 					CaseSetCompleteResultCode.UpdateFailed,
 					-1
 				);
 			}
-			const logId=await this.conn.insert(
+			const logId=await conn.insert(
 				"insert tblCaseLog(caseId,updatedBy)values(?,?);",
 				[this.id,updatedBy]
 			);
 			if(logId==null){
-				await this.conn.rollback();
+				await conn.rollback();
 				return new CaseSetCompleteResult(
 					CaseSetCompleteResultCode.LogInsertFailed,
 					-1
 				);
 			}
-			await this.conn.commit();
+			await conn.commit();
 			return new CaseSetCompleteResult(
 				CaseSetCompleteResultCode.LogInsertFailed,
 				logId
 			);
 		}catch(ex1){
 			try{
-				await this.conn.rollback();
+				await conn.rollback();
 			}catch{}
 			return new CaseSetCompleteResult(
 				CaseSetCompleteResultCode.Exception1,

@@ -51,14 +51,18 @@ class AppServer {
     getAdminRole() {
         return __awaiter(this, void 0, void 0, function* () {
             if (this.adminRole == null) {
+                let conn;
                 try {
-                    const conn = yield getDBConnection();
+                    conn = yield getDBConnection();
                     const role = yield Role_js_1.default.findByCode("ADMIN", conn);
                     this.adminRole = role;
                 }
                 catch (ex) {
                     console.error(ex);
                     return null;
+                }
+                finally {
+                    conn === null || conn === void 0 ? void 0 : conn.release();
                 }
             }
             return this.adminRole;
@@ -119,8 +123,9 @@ class AppServer {
     }
     setOfficerJoined(officerCode, regionCode, roleCode, socket) {
         return __awaiter(this, void 0, void 0, function* () {
+            let conn;
             try {
-                const conn = yield getDBConnection();
+                conn = yield getDBConnection();
                 const officer = yield Officer_js_1.default.findByCode(conn, officerCode, this);
                 if (officer == null) {
                     console.log(`[setOfficerJoined] officer=null`);
@@ -153,6 +158,9 @@ class AppServer {
                 console.error(e);
                 console.log(`[${(0, Utils_js_1.getDateStr)()}] [setOfficerJoined] exception=${e.toString()}`);
                 return null;
+            }
+            finally {
+                conn === null || conn === void 0 ? void 0 : conn.release();
             }
         });
     }
@@ -197,8 +205,9 @@ class AppServer {
                 return 0;
             }
             else {
+                let conn;
                 try {
-                    const conn = yield getDBConnection();
+                    conn = yield getDBConnection();
                     const region = yield Region_js_1.default.findByCode(regionCode, conn);
                     if (region == null) {
                         console.log(`[pushPendingMessage] No such region code=${regionCode}`);
@@ -217,6 +226,9 @@ class AppServer {
                 catch (e) {
                     console.error(e);
                     return -1;
+                }
+                finally {
+                    conn === null || conn === void 0 ? void 0 : conn.release();
                 }
             }
         });

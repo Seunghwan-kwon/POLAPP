@@ -65,11 +65,13 @@ app.use((req, res, next) => {
     const origin = req.headers.origin;
     const domain = process.env.domain || "localhost";
     const portPrefix = getPortPrefix();
-    const allowedOrigins = [];
-    allowedOrigins.push(`http://${domain}:${portPrefix + 80}`);
-    if (origin && allowedOrigins.includes(origin)) {
-        res.header("Access-Control-Allow-Origin", origin);
-    }
+    /*
+    const allowedOrigins=[];
+    allowedOrigins.push(`http://${domain}:${portPrefix+80}`);
+    */
+    //if(origin&&allowedOrigins.includes(origin)){
+    res.header("Access-Control-Allow-Origin", origin);
+    //}
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") {
@@ -99,8 +101,9 @@ class Admin {
 }
 app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { officerId, matchingCode } = req.body;
+    let conn;
     try {
-        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        conn = yield (0, AppServer_js_1.getDBConnection)();
         const officer = yield Officer_js_1.default.findByCode(conn, officerId, appServer);
         const failPayload = {
             status: "fail",
@@ -110,7 +113,7 @@ app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             res.status(401).json(failPayload);
             return;
         }
-        const officerMatchingCode = yield officer.getMatchingCode();
+        const officerMatchingCode = yield officer.getMatchingCode(conn);
         if (officerMatchingCode !== matchingCode) {
             res.status(401).json(failPayload);
             return;
@@ -128,6 +131,9 @@ app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             status: "fail",
             message: "서버 오류입니다."
         });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
 app.post("/case/assignOfficer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -148,7 +154,7 @@ app.post("/case/assignOfficer", (req, res) => __awaiter(void 0, void 0, void 0, 
             res.json({ code: -2 });
             return;
         }
-        const result = yield _case.assignOfficer(officerId, updatedBy);
+        const result = yield _case.assignOfficer(officerId, updatedBy, conn);
         res.json({
             code: 0,
             result: result
@@ -174,8 +180,9 @@ app.post("/case", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         res.json({ code: -2 });
         return;
     }
+    let conn;
     try {
-        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        conn = yield (0, AppServer_js_1.getDBConnection)();
         const _case = yield Case_js_1.default.create(name, createdBy, conn);
         if (_case == null) {
             res.json({ code: -3 });
@@ -189,6 +196,9 @@ app.post("/case", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     catch (e) {
         console.error(e);
         res.json({ code: -4 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
 app.put("/case/:id/setComplete", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -211,7 +221,7 @@ app.put("/case/:id/setComplete", (req, res) => __awaiter(void 0, void 0, void 0,
             });
             return;
         }
-        const result = yield _case.setComplete(updatedBy);
+        const result = yield _case.setComplete(updatedBy, conn);
         res.json({
             code: 0,
             result: result
@@ -313,8 +323,9 @@ app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function
         });
         return;
     }
+    let conn;
     try {
-        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        conn = yield (0, AppServer_js_1.getDBConnection)();
         const result = yield User_js_1.default.remove(conn, id, createdBy);
         res.json({
             code: 0,
@@ -324,6 +335,9 @@ app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function
     catch (ex) {
         console.error(ex);
         res.json({ code: -2 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
 app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -363,14 +377,15 @@ app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
         });
         return;
     }
+    let conn;
     try {
-        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        conn = yield (0, AppServer_js_1.getDBConnection)();
         let officer = yield Officer_js_1.default.getCached(id, conn, appServer);
         if (officer == null) {
             res.json({ code: -2 });
             return;
         }
-        const result = yield officer.remove(updatedBy);
+        const result = yield officer.remove(updatedBy, conn);
         res.json({
             code: 0,
             result: result
@@ -379,6 +394,9 @@ app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
     catch (e) {
         console.error(e);
         res.json({ code: -3 });
+    }
+    finally {
+        conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
 const port = getPortPrefix() + 80;

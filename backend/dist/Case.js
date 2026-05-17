@@ -49,9 +49,8 @@ class GetOfficerIdsResult {
     }
 }
 class Case {
-    constructor(id, conn) {
+    constructor(id) {
         this.id = id;
-        this.conn = conn;
         this.state = -1;
     }
     static getCached(id, conn) {
@@ -63,7 +62,7 @@ class Case {
                     Case.cached.set(id, null);
                     return null;
                 }
-                _case = new Case(id, conn);
+                _case = new Case(id);
                 Case.cached.set(id, _case);
             }
             return _case;
@@ -76,7 +75,7 @@ class Case {
                 if (insertId == null) {
                     return null;
                 }
-                const _case = new Case(insertId, conn);
+                const _case = new Case(insertId);
                 Case.cached.set(insertId, _case);
                 return _case;
             }
@@ -104,10 +103,10 @@ class Case {
             }
         });
     }
-    assignOfficer(officerId, updatedBy) {
+    assignOfficer(officerId, updatedBy, conn) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const insertId = yield this.conn.insert("insert into tblCaseOfficer(caseId,policeId,updatedBy)values(?,?,?);", [this.id, officerId, updatedBy]);
+                const insertId = yield conn.insert("insert into tblCaseOfficer(caseId,policeId,updatedBy)values(?,?,?);", [this.id, officerId, updatedBy]);
                 if (insertId == null) {
                     return new AssignOfficerResult(AssignOfficerResultCode.InsertFailed);
                 }
@@ -124,42 +123,43 @@ class Case {
         return __awaiter(this, void 0, void 0, function* () {
         });
     }
-    hasPermission(updater) {
+    hasPermission(updater, conn) {
         return __awaiter(this, void 0, void 0, function* () {
-            const hasPermission = yield this.conn.selectSingle("select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;", [updater]);
+            const hasPermission = yield conn.selectSingle("select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;", [updater]);
             return hasPermission != null;
         });
     }
-    setState(state) {
+    setState(state, conn) {
         return __awaiter(this, void 0, void 0, function* () {
-            const changedCount = yield this.conn.update("update tblCase set state=? where id=? and state=?;", [state, this.id, this.state]);
+            const changedCount = yield conn.update("update tblCase set state=? where id=? and state=?;", [state, this.id, this.state]);
             return changedCount;
         });
     }
-    setComplete(updatedBy) {
+    setComplete(updatedBy, conn) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const hasPermission = yield this.conn.selectSingle("select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;", [updatedBy]);
-                if (!(yield this.hasPermission(updatedBy))) {
-                    yield this.conn.rollback();
+                yield conn.beginTransaction();
+                const hasPermission = yield conn.selectSingle("select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;", [updatedBy]);
+                if (!(yield this.hasPermission(updatedBy, conn))) {
+                    yield conn.rollback();
                     return new CaseSetCompleteResult(CaseSetCompleteResultCode.PermissionDenied, -1);
                 }
-                const changedCount = yield this.setState(200);
+                const changedCount = yield this.setState(200, conn);
                 if (changedCount != 1) {
-                    yield this.conn.rollback();
+                    yield conn.rollback();
                     return new CaseSetCompleteResult(CaseSetCompleteResultCode.UpdateFailed, -1);
                 }
-                const logId = yield this.conn.insert("insert tblCaseLog(caseId,updatedBy)values(?,?);", [this.id, updatedBy]);
+                const logId = yield conn.insert("insert tblCaseLog(caseId,updatedBy)values(?,?);", [this.id, updatedBy]);
                 if (logId == null) {
-                    yield this.conn.rollback();
+                    yield conn.rollback();
                     return new CaseSetCompleteResult(CaseSetCompleteResultCode.LogInsertFailed, -1);
                 }
-                yield this.conn.commit();
+                yield conn.commit();
                 return new CaseSetCompleteResult(CaseSetCompleteResultCode.LogInsertFailed, logId);
             }
             catch (ex1) {
                 try {
-                    yield this.conn.rollback();
+                    yield conn.rollback();
                 }
                 catch (_a) { }
                 return new CaseSetCompleteResult(CaseSetCompleteResultCode.Exception1, -1);

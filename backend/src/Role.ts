@@ -3,12 +3,10 @@ import Officer from"./Officer.js";
 export default class Role{
 	id:number;
 	code:string;
-	conn:DBConnection;
 	officers:Map<number,Officer>;
-	constructor(id:number,code:string,conn:DBConnection){
+	constructor(id:number,code:string){
 		this.id=id;
 		this.code=code;
-		this.conn=conn;
 		this.officers=new Map<number,Officer>();
 	}
 	addOfficer(officer:Officer){
@@ -26,7 +24,7 @@ export default class Role{
 				Role.cached.set(id,null);
 				return null;
 			}else{
-				role=new Role(id,code,conn);
+				role=new Role(id,code);
 				Role.cached.set(id,role);
 			}
 		}

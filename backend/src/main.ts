@@ -30,11 +30,13 @@ app.use((req,res,next)=>{
 	const origin=req.headers.origin;
 	const domain=process.env.domain||"localhost";
 	const portPrefix=getPortPrefix();
+	/*
 	const allowedOrigins=[];
 	allowedOrigins.push(`http://${domain}:${portPrefix+80}`);
-	if(origin&&allowedOrigins.includes(origin)){
+	*/
+	//if(origin&&allowedOrigins.includes(origin)){
 		res.header("Access-Control-Allow-Origin",origin);
-	}
+	//}
 	res.header("Access-Control-Allow-Methods","GET, POST, PUT, DELETE, OPTIONS");
 	res.header("Access-Control-Allow-Headers","Content-Type");
 	if(req.method==="OPTIONS"){
@@ -70,8 +72,9 @@ interface LoginRequestBody{
 }
 app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 	const{officerId,matchingCode}=req.body;
+	let conn
 	try{
-		const conn=await getDBConnection();
+		conn=await getDBConnection();
 		const officer=await Officer.findByCode(conn,officerId,appServer);
 		const failPayload={
 			status:"fail",
@@ -81,7 +84,7 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 			res.status(401).json(failPayload);
 			return;
 		}
-		const officerMatchingCode=await officer.getMatchingCode();
+		const officerMatchingCode=await officer.getMatchingCode(conn);
 		if(officerMatchingCode!==matchingCode){
 			res.status(401).json(failPayload);
 			return;
@@ -102,6 +105,8 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 			status:"fail",
 			message:"서버 오류입니다."
 		});
+	}finally{
+		conn?.release();
 	}
 });
 interface AssignOfficerRequestBody{
@@ -125,7 +130,7 @@ app.post("/case/assignOfficer",async(req:Request<{},{},AssignOfficerRequestBody>
 			res.json({code:-2});
 			return;
 		}
-		const result=await _case.assignOfficer(officerId,updatedBy);
+		const result=await _case.assignOfficer(officerId,updatedBy,conn);
 		res.json({
 			code:0,
 			result:result
@@ -151,8 +156,9 @@ app.post("/case",async(req:Request<{},{},CreateCaseRequestBody>,res:Response)=>{
 		res.json({code:-2});
 		return;
 	}
+	let conn;
 	try{
-		const conn=await getDBConnection();
+		conn=await getDBConnection();
 		const _case=await Case.create(name,createdBy,conn);
 		if(_case==null){
 			res.json({code:-3});
@@ -165,6 +171,8 @@ app.post("/case",async(req:Request<{},{},CreateCaseRequestBody>,res:Response)=>{
 	}catch(e){
 		console.error(e);
 		res.json({code:-4});
+	}finally{
+		conn?.release();
 	}
 });
 app.put("/case/:id/setComplete",async(req:Request,res:Response)=>{
@@ -186,7 +194,7 @@ app.put("/case/:id/setComplete",async(req:Request,res:Response)=>{
 			});
 			return;
 		}
-		const result=await _case.setComplete(updatedBy);
+		const result=await _case.setComplete(updatedBy,conn);
 		res.json({
 			code:0,
 			result:result
@@ -292,8 +300,9 @@ app.delete("/user/:id",async(req:Request<DeleteUserParams>,res:Response)=>{
 		});
 		return;
 	}
+	let conn;
 	try{
-		const conn=await getDBConnection();
+		conn=await getDBConnection();
 		const result=await User.remove(conn,id,createdBy);
 		res.json({
 			code:0,
@@ -302,6 +311,8 @@ app.delete("/user/:id",async(req:Request<DeleteUserParams>,res:Response)=>{
 	}catch(ex){
 		console.error(ex);
 		res.json({code:-2});
+	}finally{
+		conn?.release();
 	}
 });
 interface CreateOfficerRequestBody{
@@ -344,14 +355,15 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 		});
 		return;
 	}
+	let conn;
 	try{
-		const conn=await getDBConnection();
+		conn=await getDBConnection();
 		let officer=await Officer.getCached(id,conn,appServer);
 		if(officer==null){
 			res.json({code:-2});
 			return;
 		}
-		const result=await officer.remove(updatedBy);
+		const result=await officer.remove(updatedBy,conn);
 		res.json({
 			code:0,
 			result:result
@@ -359,6 +371,8 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 	}catch(e){
 		console.error(e);
 		res.json({code:-3});
+	}finally{
+		conn?.release();
 	}
 });
 const port=getPortPrefix()+80;

@@ -62,7 +62,7 @@ class FindResult {
     }
 }
 class Officer {
-    constructor(id, conn, appServer) {
+    constructor(id, appServer) {
         this.id = id;
         this.x = 0;
         this.y = 0;
@@ -70,7 +70,6 @@ class Officer {
         this.role = null;
         this.code = "(unknown)";
         this.sockets = new Map();
-        this.conn = conn;
         this.appServer = appServer;
     }
     static getCached(id, conn, appServer) {
@@ -82,15 +81,15 @@ class Officer {
                     Officer.cached.set(id, null);
                     return null;
                 }
-                officer = new Officer(id, conn, appServer);
+                officer = new Officer(id, appServer);
                 Officer.cached.set(id, officer);
             }
             return officer;
         });
     }
-    getMatchingCode() {
+    getMatchingCode(conn) {
         return __awaiter(this, void 0, void 0, function* () {
-            const matchingCode = yield this.conn.selectSingle("select matchingCode from tblOfficer where id=? limit 1;", [this.id]);
+            const matchingCode = yield conn.selectSingle("select matchingCode from tblOfficer where id=? limit 1;", [this.id]);
             return matchingCode;
         });
     }
@@ -108,14 +107,14 @@ class Officer {
             return officer;
         });
     }
-    getCase() {
+    getCase(conn) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const caseId = yield this.conn.selectSingle("select caseId from tblOfficerCase where officerId=? limit 1;", [this.id]);
+                const caseId = yield conn.selectSingle("select caseId from tblOfficerCase where officerId=? limit 1;", [this.id]);
                 if (caseId == null) {
                     return new GetCaseResult(GetCaseResultCode.Success, null);
                 }
-                const _case = yield Case_js_1.default.getCached(caseId, this.conn);
+                const _case = yield Case_js_1.default.getCached(caseId, conn);
                 return new GetCaseResult(GetCaseResultCode.Success, _case);
             }
             catch (err) {
@@ -135,7 +134,7 @@ class Officer {
                     return new CreateResult(CreateResultCode.InsertFailed, null);
                 }
                 yield conn.commit();
-                const officer = new Officer(insertId, conn, appServer);
+                const officer = new Officer(insertId, appServer);
                 officer.code = code;
                 Officer.cached.set(officer.id, officer);
                 return new CreateResult(0, officer);
@@ -154,27 +153,24 @@ class Officer {
             }
         });
     }
-    remove(updatedBy) {
+    remove(updatedBy, conn) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             try {
-                yield this.conn.beginTransaction();
-                const changedCount = yield this.conn.update("update tblOfficer set isActive=0 where id=? and isActive=1 limit 1;", [this.id]);
+                yield conn.beginTransaction();
+                const changedCount = yield conn.update("update tblOfficer set isActive=0 where id=? and isActive=1 limit 1;", [this.id]);
                 if (changedCount !== 1) {
-                    yield this.conn.rollback();
+                    yield conn.rollback();
                     return new RemoveResult(RemoveResultCode.UpdateFailed);
                 }
-                yield this.conn.commit();
+                yield conn.commit();
                 return new RemoveResult(RemoveResultCode.Success);
             }
             catch (ex1) {
                 try {
-                    yield ((_a = this.conn) === null || _a === void 0 ? void 0 : _a.rollback());
+                    yield conn.rollback();
                 }
-                catch (_b) { }
+                catch (_a) { }
                 return new RemoveResult(RemoveResultCode.Exception1);
-            }
-            finally {
             }
         });
     }
