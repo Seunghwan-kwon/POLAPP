@@ -322,20 +322,30 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 const port=getPortPrefix()+80;
 const appServer=new AppServer();
 console.log("port="+port);
+function getDateStr():string{
+	const date=new Date();
+	const y=date.getFullYear();
+	const M=String(date.getMonth()+1).padStart(2,'0');
+	const d=String(date.getDate()).padStart(2,'0');
+	const h=String(date.getHours()).padStart(2,'0');
+	const m=String(date.getMinutes()).padStart(2,'0');
+	const s=String(date.getSeconds()).padStart(2,'0');
+	return `${y}${M}${d}-${h}${m}${s}`;
+}
 io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
-	console.log("Connected");
+	console.log(`[${getDateStr()}] Connected`);
 	let officer:Officer|null=null;
 	socket.on("join",async({officerId,region,role})=>{
-		console.log(`[socket.on join] officerId=${officerId},region=${region},role=${role}`);
+		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},region=${region},role=${role}`);
 		officer=await appServer.setOfficerJoined(officerId,region,role,socket);
 		if(officer==null){
-			console.log(`[socket.on join] Failed. officerId=${officerId},region=${region},role=${role}`);
+			console.log(`[${getDateStr()}] socket.on join Failed. officerId=${officerId},region=${region},role=${role}`);
 		}
 	});
 	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
 		if(officer==null){
-			console.log("[socket.on sendMyLocation] officer=null");
+			console.log(`[socket.on sendMyLocation] officer=null`);
 			socket.disconnect();
 			return;
 		}
@@ -345,20 +355,16 @@ io.on("connection",(socket:Socket)=>{
 		officer.updateLocation(latitude,longitude);
 		appServer.setOfficerLocationUpdated(officer);
 	});
-	socket.on("sendRadioMessage",({officerId,region,message,timestamp})=>{
+	socket.on("sendRadioMessage",async({officerId,region,message,timestamp})=>{
 		if(officer==null){
-			console.log("[socket.on sendRadioMessage] officer=null");
+			console.log(`[socket.on sendRadioMessage] officer=null`);
 			socket.disconnect();
 			return;
 		}
-		if(officer.region==null){
-			return;
-		}
-		const pendingMessage=new PendingMessage(officer,message,timestamp);
-		appServer.pushPendingMessage(pendingMessage);
+		await appServer.pushPendingMessage(officer,region,message,timestamp);
 	});
 	socket.on("disconnect",(reason:string)=>{
-		console.log("[socket.on disconnect]");
+		console.log(`[${getDateStr()}] [socket.on disconnect]`);
 		if(officer==null){
 			socket.disconnect();
 			return;
@@ -369,7 +375,6 @@ io.on("connection",(socket:Socket)=>{
 		}
 	});
 });
-appServer.loop();
 httpServer.listen(port,()=>{
 	console.log(`Listening on port=${port}`);
 });

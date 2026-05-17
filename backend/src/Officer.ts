@@ -217,9 +217,25 @@ export default class Officer{
 			}
 		}
 	}
-	syncPeerLocation(peer:Officer):number{
+	notifyPeerOffline(peer:Officer):number{
 		const payload={
 			officerId:peer.code,
+		};
+		let result=0;
+		for(const socket of this.sockets.values()){
+			socket.emit("removeColleagueLocation",payload);
+			result++;
+		}
+		return result;
+	}
+	syncPeerLocation(peer:Officer):number{
+		const region=peer.region;
+		if(region==null){
+			return-1;
+		}
+		const payload={
+			officerId:peer.code,
+			region:region.code,
 			latitude:peer.x,
 			longitude:peer.y
 		};
@@ -232,13 +248,16 @@ export default class Officer{
 	}
 	syncPeerMessage(message:PendingMessage):number{
 		const peer=message.sender;
-		const region=peer.region;
+		const region=message.region;
+		let regionCode;
 		if(region==null){
-			return-1;
+			regionCode="ALL";
+		}else{
+			regionCode=region.code;
 		}
 		const payload={
 			officerId:peer.code,
-			region:region.code,
+			region:regionCode,
 			message:message.content,
 			timestamp:message.timestamp
 		};

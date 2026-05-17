@@ -21,14 +21,16 @@ export async function getDBConnection(){
 	}
 }
 export default class AppServer{
+	lastLocationUpdated:number;
+	locationUpdateTimeout:ReturnType<typeof setTimeout>|null;
 	updatedOfficers:Map<number,Officer>;
 	officers:Map<number,Officer>;
-	pendingMessages:Array<PendingMessage>;
 	adminRole:Role|null;
 	constructor(){
+		this.lastLocationUpdated=0;
+		this.locationUpdateTimeout=null;
 		this.updatedOfficers=new Map<number,Officer>();
 		this.officers=new Map<number,Officer>();
-		this.pendingMessages=new Array<PendingMessage>();
 		this.adminRole=null;
 	}
 	async getAdminRole():Promise<Role|null>{
@@ -43,6 +45,28 @@ export default class AppServer{
 			}
 		}
 		return this.adminRole;
+	}
+	async broadcastOfficerOffline(officer:Officer){
+		const region=officer.region;
+		if(region!=null){
+			let peers=region.officers.values();
+			for(const peer of peers){
+				if(peer==officer){
+					continue;
+				}
+				peer.notifyPeerOffline(officer);
+			}
+		}
+		const adminRole=await this.getAdminRole();
+		if(adminRole!=null){
+			const peers=adminRole.officers.values();
+			for(const peer of peers){
+				if(peer==officer){
+					continue;
+				}
+				peer.notifyPeerOffline(officer);
+			}
+		}
 	}
 	async syncOfficerLocations(){
 		const updatedOfficers=this.updatedOfficers.values();
@@ -70,24 +94,6 @@ export default class AppServer{
 			}
 		}
 		this.updatedOfficers.clear();
-	}
-	broadcastOfficerMessages(){
-		for(const pendingMessage of this.pendingMessages){
-			const sender=pendingMessage.sender;
-			const region=sender.region;
-			if(region==null){
-				console.log("[broadcaseOfficerMessages] region==null");
-				continue;
-			}
-			const peers=region.officers.values();
-			for(const peer of peers){
-				if(peer==sender){
-					continue;
-				}
-				peer.syncPeerMessage(pendingMessage);
-			}
-		}
-		this.pendingMessages.length=0;
 	}
 	async setOfficerJoined(officerCode:string,regionCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
 		try{
@@ -130,23 +136,62 @@ export default class AppServer{
 			return null;
 		}
 	}
-	async loop():Promise<void>{
-		while(true){
-			await this.syncOfficerLocations();
-			this.broadcastOfficerMessages();
-			await new Promise(function(resolve){
-				setTimeout(resolve,50);
-			});
-		}
-	}
-	pushPendingMessage(pendingMessage:PendingMessage):PendingMessage{
-		this.pendingMessages.push(pendingMessage);
-		return pendingMessage;
-	}
-	setOfficerOffline(officer:Officer):void{
+	async setOfficerOffline(officer:Officer):Promise<void>{
 		this.officers.delete(officer.id);
+		await this.broadcastOfficerOffline(officer);
 	}
 	setOfficerLocationUpdated(officer:Officer):void{
 		this.updatedOfficers.set(officer.id,officer);
+		const t=Date.now();
+		if(t-this.lastLocationUpdated>40){
+			if(this.locationUpdateTimeout==null){
+				this.syncOfficerLocations().then(()=>{
+					this.lastLocationUpdated=Date.now();
+				});
+			}
+		}else{
+			if(this.locationUpdateTimeout==null){
+				this.locationUpdateTimeout=setTimeout(()=>{
+					this.locationUpdateTimeout=null;
+					this.syncOfficerLocations().then(()=>{
+						this.lastLocationUpdated=Date.now();
+					});
+				},25);
+			}
+		}
+	}
+	async pushPendingMessage(sender:Officer,regionCode:string,message:string,timestamp:string):Promise<number>{
+	      	if(regionCode==="ALL"){
+			const pendingMessage=new PendingMessage(sender,null,message,timestamp);
+			const peers=this.officers.values();
+			for(const peer of peers){
+				if(sender==peer){
+					continue;
+				}
+				peer.syncPeerMessage(pendingMessage);
+			}
+			return 0;
+		}else{
+			try{
+				const conn=await getDBConnection();
+	      			const region=await Region.findByCode(regionCode,conn);
+				if(region==null){
+					console.log(`[pushPendingMessage] No such regione code=${regionCode}`);
+					return -1; 
+				}
+				const pendingMessage=new PendingMessage(sender,region,message,timestamp);
+				const peers=region.officers.values();
+				for(const peer of peers){
+					if(sender==peer){
+						continue;
+					}
+					peer.syncPeerMessage(pendingMessage);
+				}
+				return 0;
+			}catch(e){
+				console.error(e);
+				return-1;
+			}
+		}
 	}
 }
