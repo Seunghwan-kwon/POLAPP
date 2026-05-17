@@ -71,7 +71,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 웹소켓 및 동료 마커 관리를 위한 변수
   io.Socket? _socket; // 서버와 통신할 소켓 객체
-  final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
+  final String _myOfficerId = 'P-1000'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
 
@@ -163,6 +163,20 @@ class _MapHomePageState extends State<MapHomePage> {
       );
     });
 
+    // 서버로부터 다른 경찰관의 연결 해제(종료) 이벤트를 수신했을 때
+    _socket?.on('removeColleagueLocation', (data) {
+      debugPrint('[Debug] 연결 해제 이벤트 수신함: $data'); 
+      
+      if (!mounted) return; // 화면이 닫혀있으면 무시
+      
+      try {
+        final String officerId = data['officerId'].toString();
+        _removeColleagueMarker(officerId); // 마커 삭제 함수 호출
+      } catch (e) {
+        debugPrint('[Error] 퇴장 데이터 파싱 에러: $e');
+      }
+    });
+
     // 서버와 연결이 끊겼을 때
     _socket?.onDisconnect((_) => debugPrint('WebSocket disconnected'));
 
@@ -188,6 +202,26 @@ class _MapHomePageState extends State<MapHomePage> {
         );
         _colleagueMarkers[officerId] = newMarker;
         _mapController!.addOverlay(newMarker);
+      }
+    });
+  }
+
+  // 동료 경찰관 연결 해제 시 지도에서 마커를 완전히 지우는 함수
+  void _removeColleagueMarker(String officerId) {
+    if (_mapController == null) return;
+
+    setState(() {
+      if (_colleagueMarkers.containsKey(officerId)) {
+        // 1. flutter_naver_map 패키지 스펙에 맞춰 확실하게 타겟팅하여 삭제
+        final info = NOverlayInfo(type: NOverlayType.marker, id: officerId);
+        _mapController!.deleteOverlay(info);
+        
+        // 2. 동료 마커 관리 딕셔너리에서 해당 ID 제거
+        _colleagueMarkers.remove(officerId);
+        
+        debugPrint('[Debug] 동료 마커 삭제 및 화면 갱신 완료: $officerId');
+      } else {
+        debugPrint('[Debug] 지우려는 마커가 목록에 없습니다: $officerId');
       }
     });
   }
