@@ -45,6 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const socket_io_1 = require("socket.io");
 const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
@@ -52,8 +53,8 @@ const Case_js_1 = __importDefault(require("./Case.js"));
 const User_js_1 = __importDefault(require("./User.js"));
 const Officer_js_1 = __importDefault(require("./Officer.js"));
 const AppServer_js_1 = __importStar(require("./AppServer.js"));
-const PendingMessage_1 = __importDefault(require("./PendingMessage"));
 const http = __importStar(require("node:http"));
+const Utils_js_1 = require("./Utils.js");
 const app = (0, express_1.default)();
 app.use(express_1.default.static("public"));
 app.use(express_1.default.json());
@@ -96,6 +97,39 @@ class Admin {
         });
     }
 }
+app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { officerId, matchingCode } = req.body;
+    try {
+        const conn = yield (0, AppServer_js_1.getDBConnection)();
+        const officer = yield Officer_js_1.default.findByCode(conn, officerId, appServer);
+        const failPayload = {
+            status: "fail",
+            message: "사번 또는 코드가 일치하지 않습니다."
+        };
+        if (!officer) {
+            res.status(401).json(failPayload);
+            return;
+        }
+        const officerMatchingCode = yield officer.getMatchingCode();
+        if (officerMatchingCode !== matchingCode) {
+            res.status(401).json(failPayload);
+            return;
+        }
+        const token = jsonwebtoken_1.default.sign({ officerId: officer.id }, process.env.jwtSecret || "0000", { expiresIn: "1h" });
+        res.status(200).json({
+            status: "success",
+            officerId: officer.code,
+            token: token
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.status(500).json({
+            status: "fail",
+            message: "서버 오류입니다."
+        });
+    }
+}));
 app.post("/case/assignOfficer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { caseId, officerId } = req.body;
@@ -305,7 +339,7 @@ app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* (
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
-        const result = yield Officer_js_1.default.create(conn, userId, code, createdBy);
+        const result = yield Officer_js_1.default.create(conn, userId, code, createdBy, appServer);
         res.json({
             code: 0,
             result: result
@@ -331,7 +365,7 @@ app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
     }
     try {
         const conn = yield (0, AppServer_js_1.getDBConnection)();
-        let officer = yield Officer_js_1.default.getCached(id, conn);
+        let officer = yield Officer_js_1.default.getCached(id, conn, appServer);
         if (officer == null) {
             res.json({ code: -2 });
             return;
@@ -349,20 +383,21 @@ app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
 }));
 const port = getPortPrefix() + 80;
 const appServer = new AppServer_js_1.default();
+console.log("port=" + port);
 io.on("connection", (socket) => {
     const session = socket.request.session;
-    console.log("Connected");
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] Connected`);
     let officer = null;
     socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, region, role }) {
-        console.log(`[socket.on join] officerId=${officerId},region=${region},role=${role}`);
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join] officerId=${officerId},region=${region},role=${role}`);
         officer = yield appServer.setOfficerJoined(officerId, region, role, socket);
         if (officer == null) {
-            console.log(`[socket.on join] Failed. officerId=${officerId},region=${region},role=${role}`);
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] socket.on join Failed. officerId=${officerId},region=${region},role=${role}`);
         }
     }));
     socket.on("sendMyLocation", ({ officerId, region, latitude, longitude }) => {
         if (officer == null) {
-            console.log("[socket.on sendMyLocation] officer=null");
+            console.log(`[socket.on sendMyLocation] officer=null`);
             socket.disconnect();
             return;
         }
@@ -372,31 +407,23 @@ io.on("connection", (socket) => {
         officer.updateLocation(latitude, longitude);
         appServer.setOfficerLocationUpdated(officer);
     });
-    socket.on("sendRadioMessage", ({ officerId, region, message, timestamp }) => {
+    socket.on("sendRadioMessage", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, region, message, timestamp }) {
         if (officer == null) {
-            console.log("[socket.on sendRadioMessage] officer=null");
+            console.log(`[socket.on sendRadioMessage] officer=null`);
             socket.disconnect();
             return;
         }
-        if (officer.region == null) {
-            return;
-        }
-        const pendingMessage = new PendingMessage_1.default(officer, message, timestamp);
-        appServer.pushPendingMessage(pendingMessage);
-    });
+        yield appServer.pushPendingMessage(officer, region, message, timestamp);
+    }));
     socket.on("disconnect", (reason) => {
-        console.log("[socket.on disconnect]");
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on disconnect]`);
         if (officer == null) {
             socket.disconnect();
             return;
         }
         officer.removeSocket(socket);
-        if (officer.isOffline()) {
-            appServer.setOfficerOffline(officer);
-        }
     });
 });
-appServer.loop();
 httpServer.listen(port, () => {
     console.log(`Listening on port=${port}`);
 });

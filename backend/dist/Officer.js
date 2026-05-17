@@ -62,7 +62,7 @@ class FindResult {
     }
 }
 class Officer {
-    constructor(id, conn) {
+    constructor(id, conn, appServer) {
         this.id = id;
         this.x = 0;
         this.y = 0;
@@ -71,8 +71,9 @@ class Officer {
         this.code = "(unknown)";
         this.sockets = new Map();
         this.conn = conn;
+        this.appServer = appServer;
     }
-    static getCached(id, conn) {
+    static getCached(id, conn, appServer) {
         return __awaiter(this, void 0, void 0, function* () {
             let officer = Officer.cached.get(id);
             if (officer === undefined) {
@@ -81,30 +82,30 @@ class Officer {
                     Officer.cached.set(id, null);
                     return null;
                 }
-                officer = new Officer(id, conn);
+                officer = new Officer(id, conn, appServer);
                 Officer.cached.set(id, officer);
             }
             return officer;
         });
     }
-    static findByCode(conn, code) {
+    getMatchingCode() {
         return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const id = yield conn.selectSingle("select id from tblOfficer where code=? limit 1;", [code]);
-                if (id == null) {
-                    return new FindResult(FindResultCode.Success, null);
-                }
-                const officer = new Officer(id, conn);
-                officer.code = code;
-                return new FindResult(FindResultCode.Success, officer);
+            const matchingCode = yield this.conn.selectSingle("select matchingCode from tblOfficer where id=? limit 1;", [this.id]);
+            return matchingCode;
+        });
+    }
+    static findByCode(conn, code, appServer) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const id = yield conn.selectSingle("select id from tblOfficer where code=? limit 1;", [code]);
+            if (id == null) {
+                return null;
             }
-            catch (err) {
-                console.error(err);
-                return new FindResult(FindResultCode.Error, null);
+            const officer = yield Officer.getCached(id, conn, appServer);
+            if (!officer) {
+                return null;
             }
-            finally {
-                conn === null || conn === void 0 ? void 0 : conn.release();
-            }
+            officer.code = code;
+            return officer;
         });
     }
     getCase() {
@@ -124,7 +125,7 @@ class Officer {
             }
         });
     }
-    static create(conn, id, code, createdBy) {
+    static create(conn, id, code, createdBy, appServer) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 yield conn.beginTransaction();
@@ -134,7 +135,7 @@ class Officer {
                     return new CreateResult(CreateResultCode.InsertFailed, null);
                 }
                 yield conn.commit();
-                const officer = new Officer(insertId, conn);
+                const officer = new Officer(insertId, conn, appServer);
                 officer.code = code;
                 Officer.cached.set(officer.id, officer);
                 return new CreateResult(0, officer);
@@ -186,6 +187,7 @@ class Officer {
     removeSocket(socket) {
         this.sockets.delete(socket.id);
         if (this.isOffline()) {
+            this.appServer.setOfficerOffline(this);
             if (this.region) {
                 this.region.removeOfficer(this);
                 this.region = null;
@@ -196,9 +198,25 @@ class Officer {
             }
         }
     }
-    syncPeerLocation(peer) {
+    notifyPeerOffline(peer) {
         const payload = {
             officerId: peer.code,
+        };
+        let result = 0;
+        for (const socket of this.sockets.values()) {
+            socket.emit("removeColleagueLocation", payload);
+            result++;
+        }
+        return result;
+    }
+    syncPeerLocation(peer) {
+        const region = peer.region;
+        if (region == null) {
+            return -1;
+        }
+        const payload = {
+            officerId: peer.code,
+            region: region.code,
             latitude: peer.x,
             longitude: peer.y
         };
@@ -211,13 +229,17 @@ class Officer {
     }
     syncPeerMessage(message) {
         const peer = message.sender;
-        const region = peer.region;
+        const region = message.region;
+        let regionCode;
         if (region == null) {
-            return -1;
+            regionCode = "ALL";
+        }
+        else {
+            regionCode = region.code;
         }
         const payload = {
             officerId: peer.code,
-            region: region.code,
+            region: regionCode,
             message: message.content,
             timestamp: message.timestamp
         };

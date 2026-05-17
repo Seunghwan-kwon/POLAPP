@@ -20,7 +20,7 @@ const pool = promise_1.default.createPool({
     host: process.env.dbHost || "",
     user: process.env.dbUser || "",
     database: process.env.database || "",
-    password: process.env.password || ""
+    password: process.env.dbPassword || ""
 });
 class MySqlConnection extends DBConnection_js_1.default {
     constructor(conn) {

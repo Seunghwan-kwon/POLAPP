@@ -14,11 +14,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDbConnection = getDbConnection;
 const promise_1 = __importDefault(require("mysql2/promise"));
+console.log("ENV", process.env);
 const pool = promise_1.default.createPool({
     host: process.env.dbHost || "",
     user: process.env.dbUser || "",
     database: process.env.database || "",
-    password: process.env.password || ""
+    password: process.env.dbPassword || ""
 });
 function getDbConnection() {
     return __awaiter(this, void 0, void 0, function* () {

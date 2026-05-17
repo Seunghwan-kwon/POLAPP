@@ -18,19 +18,15 @@ class Region {
     }
     addOfficer(officer) {
         this.officers.set(officer.id, officer);
+        console.log(`[addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
     }
     removeOfficer(officer) {
         this.officers.delete(officer.id);
     }
-    /*
-    static setCache(id:number,region:Region){
-        Region.cached.set(id,region);
-    }
-       */
     static getCached(id, conn) {
         return __awaiter(this, void 0, void 0, function* () {
             let region = Region.cached.get(id);
-            if (region == undefined) {
+            if (region === undefined) {
                 const code = yield conn.selectSingle("select code from tblRegion where id=? limit 1;", [id]);
                 if (code == null) {
                     Region.cached.set(id, null);
