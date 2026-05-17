@@ -13,19 +13,15 @@ export default class Region{
 	}
 	addOfficer(officer:Officer):void{
 		this.officers.set(officer.id,officer);
+		console.log(`[addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
 	}
 	removeOfficer(officer:Officer):void{
 		this.officers.delete(officer.id);
 	}
 	static cached=new Map<number,Region|null>();
-	/*
-	static setCache(id:number,region:Region){
-		Region.cached.set(id,region);
-	}
-       */
 	static async getCached(id:number,conn:DBConnection):Promise<Region|null>{
 		let region=Region.cached.get(id);
-		if(region==undefined){
+		if(region===undefined){
 			const code=await conn.selectSingle<string>("select code from tblRegion where id=? limit 1;",[id]);
 			if(code==null){
 				Region.cached.set(id,null);

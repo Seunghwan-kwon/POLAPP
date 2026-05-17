@@ -1,3 +1,4 @@
+import jwt from"jsonwebtoken";
 import{Server,Socket}from"socket.io";
 import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
@@ -5,9 +6,10 @@ import Case,{GetOfficerIdsResultCode}from"./Case.js";
 import User from"./User.js";
 import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
-import PendingMessage from"./PendingMessage";
+import PendingMessage from"./PendingMessage.js";
 import*as http from"node:http";
 import*as readline from"node:readline";
+import{getDateStr}from"./Utils.js";
 declare module"http"{
 	interface IncomingMessage{
 		session:Session&Partial<SessionData>
@@ -62,6 +64,46 @@ class Admin{
 	static async create(userId:number){
 	}
 }
+interface LoginRequestBody{
+	officerId:string,
+	matchingCode:string
+}
+app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
+	const{officerId,matchingCode}=req.body;
+	try{
+		const conn=await getDBConnection();
+		const officer=await Officer.findByCode(conn,officerId,appServer);
+		const failPayload={
+			status:"fail",
+			message:"사번 또는 코드가 일치하지 않습니다."
+		};
+		if(!officer){
+			res.status(401).json(failPayload);
+			return;
+		}
+		const officerMatchingCode=await officer.getMatchingCode();
+		if(officerMatchingCode!==matchingCode){
+			res.status(401).json(failPayload);
+			return;
+		}
+		const token=jwt.sign(
+			{officerId:officer.id},
+			process.env.jwtSecret||"0000",
+			{expiresIn:"1h"}
+		);
+		res.status(200).json({
+			status:"success",
+			officerId:officer.code,
+			token:token
+		});
+	}catch(e){
+		console.error(e);
+		res.status(500).json({
+			status:"fail",
+			message:"서버 오류입니다."
+		});
+	}
+});
 interface AssignOfficerRequestBody{
 	caseId:number,
 	officerId:number
@@ -278,7 +320,7 @@ app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Respon
 	let conn;
 	try{
 		conn=await getDBConnection();
-		const result=await Officer.create(conn,userId,code,createdBy);
+		const result=await Officer.create(conn,userId,code,createdBy,appServer);
 		res.json({
 			code:0,
 			result:result
@@ -304,7 +346,7 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 	}
 	try{
 		const conn=await getDBConnection();
-		let officer=await Officer.getCached(id,conn);
+		let officer=await Officer.getCached(id,conn,appServer);
 		if(officer==null){
 			res.json({code:-2});
 			return;
@@ -322,16 +364,6 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 const port=getPortPrefix()+80;
 const appServer=new AppServer();
 console.log("port="+port);
-function getDateStr():string{
-	const date=new Date();
-	const y=date.getFullYear();
-	const M=String(date.getMonth()+1).padStart(2,'0');
-	const d=String(date.getDate()).padStart(2,'0');
-	const h=String(date.getHours()).padStart(2,'0');
-	const m=String(date.getMinutes()).padStart(2,'0');
-	const s=String(date.getSeconds()).padStart(2,'0');
-	return `${y}${M}${d}-${h}${m}${s}`;
-}
 io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log(`[${getDateStr()}] Connected`);
@@ -370,9 +402,6 @@ io.on("connection",(socket:Socket)=>{
 			return;
 		}
 		officer.removeSocket(socket);
-		if(officer.isOffline()){
-			appServer.setOfficerOffline(officer);
-		}
 	});
 });
 httpServer.listen(port,()=>{

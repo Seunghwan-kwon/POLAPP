@@ -1,4 +1,5 @@
 import{Socket}from"socket.io";
+import AppServer from"./AppServer.js";
 import DBConnection from"./DBConnection.js";
 import Case from"./Case.js";
 import PendingMessage from"./PendingMessage.js";
@@ -64,7 +65,8 @@ export default class Officer{
 	role:Role|null;
 	sockets:Map<string,Socket>
 	conn:DBConnection;
-	constructor(id:number,conn:DBConnection){
+	appServer:AppServer;
+	constructor(id:number,conn:DBConnection,appServer:AppServer){
 		this.id=id;
 		this.x=0;
 		this.y=0;
@@ -73,9 +75,10 @@ export default class Officer{
 		this.code="(unknown)";
 		this.sockets=new Map<string,Socket>();
 		this.conn=conn;
+		this.appServer=appServer;
 	}
 	static cached=new Map<number,Officer|null>();
-	static async getCached(id:number,conn:DBConnection):Promise<Officer|null>{
+	static async getCached(id:number,conn:DBConnection,appServer:AppServer):Promise<Officer|null>{
 		let officer=Officer.cached.get(id);
 		if(officer===undefined){
 			const row=await conn.selectRow<any>(
@@ -86,29 +89,31 @@ export default class Officer{
 				Officer.cached.set(id,null);
 				return null;
 			}
-			officer=new Officer(id,conn);
+			officer=new Officer(id,conn,appServer);
 			Officer.cached.set(id,officer);
 		}
 		return officer;
 	}
-	static async findByCode(conn:DBConnection,code:string):Promise<FindResult>{
-		try{
-			const id=await conn.selectSingle<number>(
-				"select id from tblOfficer where code=? limit 1;",
-				[code]
-			);
-			if(id==null){
-				return new FindResult(FindResultCode.Success,null);
-			}
-			const officer=new Officer(id,conn);
-			officer.code=code;
-			return new FindResult(FindResultCode.Success,officer);
-		}catch(err:any){
-			console.error(err);
-			return new FindResult(FindResultCode.Error,null);
-		}finally{
-			conn?.release();
+	async getMatchingCode():Promise<string|null>{
+		const matchingCode=await this.conn.selectSingle<string>(
+			"select matchingCode from tblOfficer where id=? limit 1;",[this.id]
+		);
+		return matchingCode;
+	}
+	static async findByCode(conn:DBConnection,code:string,appServer:AppServer):Promise<Officer|null>{
+		const id=await conn.selectSingle<number>(
+			"select id from tblOfficer where code=? limit 1;",
+			[code]
+		);
+		if(id==null){
+			return null;
 		}
+		const officer=await Officer.getCached(id,conn,appServer);
+		if(!officer){
+			return null;
+		}
+		officer.code=code;
+		return officer;
 	}
 	async getCase():Promise<GetCaseResult>{
 		try{
@@ -135,7 +140,7 @@ export default class Officer{
 		}finally{
 		}
 	}
-	static async create(conn:DBConnection,id:number,code:string,createdBy:number):Promise<CreateResult>{
+	static async create(conn:DBConnection,id:number,code:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
 		try{
 			await conn.beginTransaction();
 			const insertId=await conn.insert(
@@ -150,7 +155,7 @@ export default class Officer{
 				);
 			}
 			await conn.commit();
-			const officer=new Officer(insertId,conn);
+			const officer=new Officer(insertId,conn,appServer);
 			officer.code=code;
 			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
@@ -207,6 +212,7 @@ export default class Officer{
 	removeSocket(socket:Socket):void{
 		this.sockets.delete(socket.id);
 		if(this.isOffline()){
+			this.appServer.setOfficerOffline(this);
 			if(this.region){
 				this.region.removeOfficer(this);
 				this.region=null;

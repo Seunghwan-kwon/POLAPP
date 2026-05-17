@@ -1,4 +1,7 @@
 "use strict";
+window.addEventListener("error",(e)=>{
+	alert(e);
+});
 const socket=io("/");
 class Case{
 	constructor(id){
@@ -76,6 +79,9 @@ socket.on("disconnect",(reason)=>{
 	console.log(`Diconnected reason=${reason}`);
 	setJoined(false);
 });
+socket.on("removeColleagueLocation",({officerId})=>{
+	alert(`removeColleagueLocation officerId=${officerId}`);
+});
 socket.on("caseComplete",(caseId)=>{
 	setCaseComplete(caseId);
 	updateUI("caseComplete",[caseId]);
@@ -138,14 +144,14 @@ function main(){
 		const codeBox=document.createElement("input");
 		{
 			const e=codeBox;
-			e.value="P-0001";
+			e.value="P-1000";
 			e.type="text";
 		}
 		e.appendChild(codeBox);
 		const regionBox=document.createElement("input");
 		{
 			const e=regionBox;
-			e.value="DEFAULT";
+			e.value="SEOUL_NOWON";
 			e.type="text";
 		}
 		e.appendChild(regionBox);
@@ -190,7 +196,7 @@ function main(){
 		e.height=400;
 		e.style.border="1px solid #000";
 		const MAX_DELAY=80;
-		canvas.addEventListener("mousemove",(e)=>{
+		canvas.addEventListener("pointermove",(e)=>{
 			if(!joined){
 				return;
 			}

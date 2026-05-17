@@ -5,6 +5,7 @@ import DBConnection from"./DBConnection.js";
 import Region from"./Region.js";
 import Role from"./Role.js";
 import{getMySqlConnection}from"./MySqlConnection.js";
+import{getDateStr}from"./Utils.js";
 enum DBType{
 	MySQL,
 	Sqlite3
@@ -98,12 +99,7 @@ export default class AppServer{
 	async setOfficerJoined(officerCode:string,regionCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
 		try{
 			const conn=await getDBConnection();
-			const result=await Officer.findByCode(conn,officerCode);
-			if(result.code!=0){
-				console.log(`[setOfficerJoined] result.code=${result.code}`);
-				return null;
-			}
-			const officer=result.officer;
+			const officer=await Officer.findByCode(conn,officerCode,this);
 			if(officer==null){
 				console.log(`[setOfficerJoined] officer=null`);
 				return null;
@@ -132,7 +128,7 @@ export default class AppServer{
 			return officer;
 		}catch(e:any){
 			console.error(e);
-			console.log(`[setOfficerJoined] exception=${e.toString()}`);
+			console.log(`[${getDateStr()}] [setOfficerJoined] exception=${e.toString()}`);
 			return null;
 		}
 	}
@@ -176,7 +172,7 @@ export default class AppServer{
 				const conn=await getDBConnection();
 	      			const region=await Region.findByCode(regionCode,conn);
 				if(region==null){
-					console.log(`[pushPendingMessage] No such regione code=${regionCode}`);
+					console.log(`[pushPendingMessage] No such region code=${regionCode}`);
 					return -1; 
 				}
 				const pendingMessage=new PendingMessage(sender,region,message,timestamp);
