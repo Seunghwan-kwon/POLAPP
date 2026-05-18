@@ -3,7 +3,7 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:flutter/foundation.dart'; // kIsWeb을 사용하기 위해 추가
 
 import 'pages/app_entry_page.dart'; 
-import 'pages/admin_dashboard_page.dart'; 
+import 'pages/admin_login_page.dart'; 
 
 const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID'); // 네이버 맵 앱 전용 클라이언트 ID
 
@@ -36,9 +36,9 @@ class PolApp extends StatelessWidget {
         useMaterial3: true,
       ),
       // 접속 환경에 따라 앱 또는 웹 페이지 출력
-      // 웹 접속 : 관리자 페이지
-      // 앱 접속 : 로그인 페이지
-      home: kIsWeb ? const AdminDashboardPage() : const AppEntryPage(),
+      // 웹 접속 : 관리자 '로그인' 페이지 (AdminLoginPage)
+      // 앱 접속 : 앱 진입 페이지 (AppEntryPage)
+      home: kIsWeb ? const AdminLoginPage() : const AppEntryPage(),
     );
   }
 }
