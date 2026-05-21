@@ -347,14 +347,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(255, 85, 117, 169),
+                    backgroundColor: Color(0xFF1B3B6F),
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () {
                     final String text = messageController.text.trim();
                     if (text.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('무전 메시지 내용을 입력해 주세요.')),
+                        const SnackBar(content: Text('전파할 지시 사항을 입력해 주세요.')),
                       );
                       return;
                     }
@@ -414,7 +414,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         });
 
         return const AlertDialog(
-          backgroundColor: Color.fromARGB(255, 85, 117, 169),
+          backgroundColor: Color(0xFF1B3B6F),
           content: Text(
             '신고 발생 위치에 마우스를 클릭하세요.',
             textAlign: TextAlign.center,
@@ -440,7 +440,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           'POLWEB - 종합 상황실 대시보드', 
           style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5),
         ),
-        backgroundColor: const Color.fromARGB(255, 85, 117, 169), 
+        backgroundColor: const Color(0xFF1B3B6F), 
         foregroundColor: Colors.white,
         elevation: 4,
         actions: [

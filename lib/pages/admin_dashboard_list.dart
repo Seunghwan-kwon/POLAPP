@@ -21,7 +21,7 @@ class AdminDashboardList extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: const BoxDecoration(
-              color: Color.fromARGB(255, 85, 117, 169),
+              color: Color(0xFF1B3B6F),
               borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
             ),
             child: Row(
