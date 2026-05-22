@@ -401,26 +401,28 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       _isReportListOpen = !_isReportListOpen;
     });
   }
+  
+  bool _isReportClicked = false; // 신고 접수 버튼 클릭 상태를 관리하는 플래그
 
-  void _showReportAlert() {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (context.mounted) {
-            Navigator.of(context).pop();
-          }
-        });
-
-        return const AlertDialog(
-          backgroundColor: Color(0xFF1B3B6F),
-          content: Text(
-            '신고 발생 위치에 마우스를 클릭하세요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70),
+  // 신고 접수 버튼 클릭 시 사용자에게 확인을 받는 팝업 다이얼로그를 띄우는 함수
+  Future<bool?> _showReportAlert() {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('신고 접수'),
+        content: const Text('신고 접수를 하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('접수'),
           ),
-        );
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+        ],
+      );
       },
     );
   }
@@ -447,9 +449,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Tooltip(
             message: '클릭한 위치에 신고를 접수합니다.',
             child: TextButton.icon(
-            onPressed : _showReportAlert,
-            icon: const Icon(Icons.crisis_alert, color: Colors.redAccent),
-            label: const Text('신고 접수', style: TextStyle(color: Colors.white)),
+              onPressed: () async {
+                setState( () {
+                  _isReportClicked = !_isReportClicked; // 신고 접수 버튼이 클릭되었음을 표시
+                });
+                
+                if(_isReportClicked) {
+                  final result = await _showReportAlert(); // 신고 접수 확인 팝업 띄우기
+
+                  if(result != true) {
+                    setState(() {
+                      _isReportClicked = false; // 신고 접수가 취소되었음을 표시
+                    });
+                  }
+                }
+              },
+              style: TextButton.styleFrom(
+                backgroundColor: _isReportClicked ? Colors.redAccent : Colors.transparent,
+                foregroundColor: Colors.white, // 클릭 시 빨간색으로 강조
+              ),
+              icon : Icon(
+                Icons.crisis_alert,
+                color: _isReportClicked ? Colors.white : Colors.redAccent, // 클릭 시 아이콘 색상도 변경
+              ),
+              label: const Text(
+                '신고 접수',
+                style : TextStyle(color: Colors.white),
+              )
             ),
           ),
           Tooltip(
