@@ -23,6 +23,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final Set<String> _connectedRegions = {}; // 현재 접속 중인 지역 채널들을 중복 없이 저장하는 Set
   final Map<String, String> _officerRegions = {}; // 퇴장 시 채널 목록을 동적으로 계산하기 위해 경찰관 ID별 지역을 저장하는 Map
   bool _isReportListOpen = false; // 상태 관리 플래그
+  final Map<String, js.JSObject> _reportMarkers = {}; // 사건 마커 저장용 MAP
+  final List<js.JSAny> _mapEventHandlers = [];
+  bool _isCreateReportDialogOpen = false; // 사건 입력창이 이미 열려 있는지 확인하여 중복 표시를 방지
+  bool _isWaitingForReportLocation = false; // 사건 접수 확인 후, 지도에서 사건 위치 클릭을 기다리는 상태
+
+  // 확인창 버튼 클릭이 지도 클릭으로 이어지는 것을 막기 위해 일정 시간 클릭 무시
+  DateTime? _lastMapDragEndedAt;
+  static const Duration _dialogClickIgnoreDuration = Duration(milliseconds: 500);
+
+  // 지도 드래그 중이거나 드래그 직후 발생하는 클릭 이벤트를 무시하기 위한 상태
+  bool _isMapDragging = false;
+  DateTime? _ignoreMapClicksUntil;
+  static const Duration _mapDragClickIgnoreDuration = Duration(milliseconds: 250);
 
   @override
   void initState() {
@@ -111,10 +124,110 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
       final mapConstructor = maps['Map'] as js.JSFunction;
       final mapInstance = mapConstructor.callAsConstructor(div as js.JSAny, mapOptions as js.JSAny);
-      
+
       js.globalContext['adminMap'] = mapInstance;
+
+      _attachMapClickListener(mapInstance as js.JSObject);
     } else {
       debugPrint('⚠️ [Error] 네이버 지도 스크립트 로드 실패');
+    }
+  }
+
+  // 네이버 지도에 드래그/클릭 이벤트를 등록하여 사건 위치 선택을 처리
+  void _attachMapClickListener(js.JSObject mapInstance) {
+    final naver = js.globalContext['naver'] as js.JSObject?;
+    // 예외 처리
+    if (naver == null) {
+      debugPrint('⚠️ [Error] 네이버 지도 객체가 없어 클릭 이벤트를 등록할 수 없습니다.');
+      return;
+    }
+
+    final maps = naver['maps'] as js.JSObject;
+    final event = maps['Event'] as js.JSObject;
+    debugPrint('[Debug] 지도 이벤트 리스너 등록 시작');
+
+    final dragStartHandler = (() {
+      _isMapDragging = true;
+    }).toJS;
+
+    final dragEndHandler = (() {
+      _lastMapDragEndedAt = DateTime.now();
+
+      Future.delayed(_mapDragClickIgnoreDuration, () {
+        if (!mounted) return;
+        _isMapDragging = false;
+      });
+    }).toJS;
+
+    // 지도 클릭 확인용 Debug 출력
+    final clickHandler = ((js.JSObject e) {
+      debugPrint('[Debug] 지도 click 이벤트 수신');
+
+      if (_shouldIgnoreMapClick()) {
+        debugPrint('[Debug] 지도 click 이벤트 무시');
+        return;
+      }
+
+      final coord = e['coord'] as js.JSObject;
+      final lat = (coord.callMethod('lat'.toJS) as js.JSNumber).toDartDouble;
+      final lng = (coord.callMethod('lng'.toJS) as js.JSNumber).toDartDouble;
+
+      debugPrint('[Debug] 지도 클릭 좌표: ($lat, $lng)');
+      _handleMapClick(lat, lng, coord);
+    }).toJS;
+
+    _mapEventHandlers.addAll([
+      dragStartHandler,
+      dragEndHandler,
+      clickHandler,
+    ]);
+
+    event.callMethod(
+      'addListener'.toJS,
+      mapInstance,
+      'dragstart'.toJS,
+      dragStartHandler,
+    );
+
+    event.callMethod(
+      'addListener'.toJS,
+      mapInstance,
+      'dragend'.toJS,
+      dragEndHandler,
+    );
+
+    event.callMethod(
+      'addListener'.toJS,
+      mapInstance,
+      'click'.toJS,
+      clickHandler,
+    );
+
+    debugPrint('[Debug] 지도 이벤트 리스너 등록 완료');
+  }
+
+  // 확인창 클릭 또는 지도 드래그로 인해 발생한 의도치 않은 클릭인지 검사
+  bool _shouldIgnoreMapClick() {
+    final ignoreUntil = _ignoreMapClicksUntil;
+    if (ignoreUntil != null && DateTime.now().isBefore(ignoreUntil)) return true;
+
+    if (_isMapDragging) return true;
+
+    final lastDragEndedAt = _lastMapDragEndedAt;
+    if (lastDragEndedAt == null) return false;
+
+    return DateTime.now().difference(lastDragEndedAt) < _mapDragClickIgnoreDuration;
+  }
+
+  // 위치 선택 모드에서 지도 클릭 시 사건 입력창을 표시
+  Future<void> _handleMapClick(double lat, double lng, js.JSObject position) async {
+    if (!_isWaitingForReportLocation || _isCreateReportDialogOpen) return;
+
+    _isCreateReportDialogOpen = true;
+    try {
+      await _showCreateReportDialog(lat, lng, position);
+    } finally {
+      _isCreateReportDialogOpen = false;
     }
   }
 
@@ -249,6 +362,42 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       // 새로운 마커가 추가되었으므로 인원수 UI 갱신을 위해 setState 호출
       setState(() {});
     }
+  }
+
+  // 사건 입력 완료 시 클릭 위치에 네이버 지도 마커 생성
+  void _createReportMarkerJS({
+    required String reportId,
+    required double lat,
+    required double lng,
+    required js.JSObject position,
+    required String title,
+    required String severity,
+  }) {
+    final naver = js.globalContext['naver'] as js.JSObject?;
+    final adminMap = js.globalContext['adminMap'] as js.JSObject?;
+
+    // 예외처리
+    if (naver == null || adminMap == null) {
+      debugPrint('[Error] 지도 객체가 초기화되지 않아 사건 마커를 생성할 수 없습니다.');
+      return;
+    }
+
+    final maps = naver['maps'] as js.JSObject;
+    final markerOptions = {
+      'position': position,
+      'map': adminMap,
+      'title': title,
+    }.jsify();
+
+    final markerConstructor = maps['Marker'] as js.JSFunction;
+    final newMarker = markerConstructor.callAsConstructor(markerOptions as js.JSAny);
+    (newMarker as js.JSObject).callMethod('setPosition'.toJS, position);
+
+    setState(() {
+      _reportMarkers[reportId] = newMarker;
+    });
+
+    debugPrint('[Debug] 사건 마커 생성 완료: $reportId ($lat, $lng, $severity)');
   }
 
   // 특정 경찰관의 연결 해제 시 지도에서 마커를 지우고 실시간 현황을 갱신하는 함수
@@ -396,13 +545,136 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  // 클릭한 지도 좌표를 기준으로 사건 정보 입력창 표시
+  Future<void> _showCreateReportDialog(double lat, double lng, js.JSObject position) async {
+    final titleController = TextEditingController();
+    final descriptionController = TextEditingController();
+    String selectedSeverity = 'LOW';
+    bool isSubmitted = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 48, vertical: 32),
+              title: const Text('사건 접수'),
+              content: SizedBox(
+                width: 560,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(
+                          labelText: '사건',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: descriptionController,
+                        minLines: 6,
+                        maxLines: 8,
+                        decoration: const InputDecoration(
+                          labelText: '상세 사건 내용',
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedSeverity,
+                        decoration: const InputDecoration(
+                          labelText: '사건코드',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'LOW', child: Text('코드3 (비긴급)')),
+                          DropdownMenuItem(value: 'MEDIUM', child: Text('코드2')),
+                          DropdownMenuItem(value: 'HIGH', child: Text('코드1')),
+                          DropdownMenuItem(value: 'URGENT', child: Text('코드0 (긴급)')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            selectedSeverity = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '위치: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('취소'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final title = titleController.text.trim();
+                    final description = descriptionController.text.trim();
+
+                    if (title.isEmpty || description.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('사건 제목과 내용을 입력해 주세요.')),
+                      );
+                      return;
+                    }
+
+                    final reportId = DateTime.now().millisecondsSinceEpoch.toString();
+
+                    _createReportMarkerJS(
+                      reportId: reportId,
+                      lat: lat,
+                      lng: lng,
+                      position: position,
+                      title: title,
+                      severity: selectedSeverity,
+                    );
+
+                    isSubmitted = true;
+                    setState(() {
+                      _isWaitingForReportLocation = false;
+                    });
+
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('접수'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    titleController.dispose();
+    descriptionController.dispose();
+
+    if (mounted && !isSubmitted && _isWaitingForReportLocation) {
+      setState(() {
+        _isWaitingForReportLocation = false;
+      });
+    }
+  }
+
   void _toggleReportList() {
     setState(() {
       _isReportListOpen = !_isReportListOpen;
     });
   }
-  
-  bool _isReportClicked = false; // 신고 접수 버튼 클릭 상태를 관리하는 플래그
 
   // 신고 접수 버튼 클릭 시 사용자에게 확인을 받는 팝업 다이얼로그를 띄우는 함수
   Future<bool?> _showReportAlert() {
@@ -424,6 +696,31 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         ],
       );
       },
+    );
+  }
+
+  Future<void> _startReportRegistrationMode() async {
+    if (_isWaitingForReportLocation) {
+      setState(() {
+        _isWaitingForReportLocation = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('사건 접수 모드를 종료했습니다.')),
+      );
+      return;
+    }
+
+    final result = await _showReportAlert();
+    if (!mounted || result != true) return;
+
+    setState(() {
+      _isWaitingForReportLocation = true;
+    });
+    _ignoreMapClicksUntil = DateTime.now().add(_dialogClickIgnoreDuration);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('지도에서 사건 위치를 클릭해 주세요.')),
     );
   }
 
@@ -449,28 +746,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Tooltip(
             message: '클릭한 위치에 신고를 접수합니다.',
             child: TextButton.icon(
-              onPressed: () async {
-                setState( () {
-                  _isReportClicked = !_isReportClicked; // 신고 접수 버튼이 클릭되었음을 표시
-                });
-                
-                if(_isReportClicked) {
-                  final result = await _showReportAlert(); // 신고 접수 확인 팝업 띄우기
-
-                  if(result != true) {
-                    setState(() {
-                      _isReportClicked = false; // 신고 접수가 취소되었음을 표시
-                    });
-                  }
-                }
-              },
+              onPressed: _startReportRegistrationMode,
               style: TextButton.styleFrom(
-                backgroundColor: _isReportClicked ? Colors.redAccent : Colors.transparent,
+                backgroundColor:
+                    _isWaitingForReportLocation ? Colors.redAccent : Colors.transparent,
                 foregroundColor: Colors.white, // 클릭 시 빨간색으로 강조
               ),
               icon : Icon(
                 Icons.crisis_alert,
-                color: _isReportClicked ? Colors.white : Colors.redAccent, // 클릭 시 아이콘 색상도 변경
+                color: _isWaitingForReportLocation ? Colors.white : Colors.redAccent, // 클릭 시 아이콘 색상도 변경
               ),
               label: const Text(
                 '신고 접수',
