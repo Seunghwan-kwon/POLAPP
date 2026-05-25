@@ -1,6 +1,6 @@
 import 'dart:convert'; // JSON 파싱을 위해 추가
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_service.dart';
 import 'package:http/http.dart' as http; // HTTP 통신 패키지 임포트
 import 'map_home_page.dart';
 
@@ -68,9 +68,10 @@ class _LoginPageState extends State<LoginPage> {
         final String token = data['token'] ?? 'temp-token'; // 백엔드에서 아직 token을 안 준다면 임시값 사용
 
         // 휴대폰 내부 금고(SharedPreferences)에 인증 정보를 안전하게 저장합니다.
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('officerId', validatedId);
-        await prefs.setString('authToken', token); 
+        await AuthService.login(
+          officerId: validatedId,
+          token: token,
+        );
 
         debugPrint('[Auth] 로그인 성공! 사번: $validatedId');
 
