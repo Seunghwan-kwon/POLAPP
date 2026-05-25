@@ -37,7 +37,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     });
 
     try {
-      final String apiUrl = 'http://polapp.cafe24.com:81/login';
+      final String apiUrl = 'https://polapp.duckdns.org:444/login';
       debugPrint('[Web Auth] 로그인 시도 - ID: $adminId');
 
       final response = await http.post(

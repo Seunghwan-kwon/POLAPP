@@ -437,7 +437,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 children: [
                   Icon(Icons.campaign, color: Colors.redAccent),
                   SizedBox(width: 8),
-                  Text('전체 무전 메시지 전파', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('전체 메시지 전파', style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
               content: Column(
@@ -477,7 +477,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     },
                   ),
                   const SizedBox(height: 16),
-                  const Text('무전 메시지 내용 입력', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('메시지 내용 입력', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: messageController,
@@ -523,11 +523,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                       // 선택한 옵션에 따라 완료 스낵바 문구를 다르게 표시
                       final String resultText = selectedRegion == 'ALL' 
-                          ? '전체 관할 구역으로' 
-                          : '[$selectedRegion] 구역으로';
+                          ? '전체 관할 지역으로' 
+                          : '[$selectedRegion] 지역으로';
 
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$resultText 무전 메시지가 전파되었습니다.')),
+                        SnackBar(content: Text('$resultText 메시지가 전파되었습니다.')),
                       );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -775,7 +775,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             child : TextButton.icon(
             onPressed: _showRadioDialog,
             icon: const Icon(Icons.campaign, color: Colors.redAccent),
-            label: const Text('전체 무전 메시지', style: TextStyle(color: Colors.white)),
+            label: const Text('전체 메시지 전파', style: TextStyle(color: Colors.white)),
             ),
           ),
           const SizedBox(width: 16),

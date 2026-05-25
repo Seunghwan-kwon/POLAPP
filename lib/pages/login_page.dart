@@ -43,7 +43,7 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final String apiUrl = 'http://polapp.cafe24.com:81/login';
+      final String apiUrl = 'https://polapp.duckdns.org:444/login';
 
       debugPrint('[Auth] 로그인 시도 - URL: $apiUrl, ID: $officerId');
 
