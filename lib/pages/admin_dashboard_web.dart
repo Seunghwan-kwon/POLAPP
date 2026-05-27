@@ -8,6 +8,9 @@ import 'dart:js_interop' as js; // Dart 코드에서 JavaScript 변수나 함수
 import 'dart:js_interop_unsafe'; // JS 객체의 속성에 동적으로 접근하기 위해 추가
 import 'dart:ui_web' as ui_web; // 플러터 웹 화면 안에 HTML 요소를 등록하기 위해 추가
 import 'admin_dashboard_list.dart'; // 사건 내용 리스트
+import '../models/report.dart';
+
+// 사건 마커는 지도에 표시되는 JS 객체이고, 상세 내용은 Dart 상태로 따로 보관
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -24,7 +27,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final Map<String, String> _officerRegions = {}; // 퇴장 시 채널 목록을 동적으로 계산하기 위해 경찰관 ID별 지역을 저장하는 Map
   bool _isReportListOpen = false; // 상태 관리 플래그
   final Map<String, js.JSObject> _reportMarkers = {}; // 사건 마커 저장용 MAP
+  final Map<String, Report> _reports = {}; // 사건 상세 내용을 id 기준으로 보관하는 로컬 상태
+  String? _selectedReportId; // 우측 상세 패널에 표시할 현재 선택 사건 id
   final List<js.JSAny> _mapEventHandlers = [];
+  bool _areMapGesturesEnabled = true;
   bool _isCreateReportDialogOpen = false; // 사건 입력창이 이미 열려 있는지 확인하여 중복 표시를 방지
   bool _isWaitingForReportLocation = false; // 사건 접수 확인 후, 지도에서 사건 위치 클릭을 기다리는 상태
 
@@ -371,6 +377,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     required double lng,
     required js.JSObject position,
     required String title,
+    required String description,
     required String severity,
   }) {
     final naver = js.globalContext['naver'] as js.JSObject?;
@@ -383,6 +390,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
 
     final maps = naver['maps'] as js.JSObject;
+    final event = maps['Event'] as js.JSObject;
     final markerOptions = {
       'position': position,
       'map': adminMap,
@@ -393,8 +401,37 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final newMarker = markerConstructor.callAsConstructor(markerOptions as js.JSAny);
     (newMarker as js.JSObject).callMethod('setPosition'.toJS, position);
 
+    // 사건 마커를 클릭하면 지도 우측 상세 패널에 해당 사건 정보를 보여줌
+    final markerClickHandler = (() {
+      if (!mounted) return;
+      setState(() {
+        _selectedReportId = reportId;
+        _isReportListOpen = false;
+      });
+    }).toJS;
+
+    _mapEventHandlers.add(markerClickHandler);
+    event.callMethod(
+      'addListener'.toJS,
+      newMarker,
+      'click'.toJS,
+      markerClickHandler,
+    );
+
     setState(() {
+      // 상세 데이터는 Dart 상태에, 지도 마커 객체는 JS 마커 맵에 나누어 저장
+      _reports[reportId] = Report(
+        id: reportId,
+        title: title,
+        description: description,
+        severity: severity,
+        lat: lat,
+        lng: lng,
+        createdAt: DateTime.now(),
+      );
       _reportMarkers[reportId] = newMarker;
+      _selectedReportId = reportId;
+      _isReportListOpen = false;
     });
 
     debugPrint('[Debug] 사건 마커 생성 완료: $reportId ($lat, $lng, $severity)');
@@ -420,6 +457,330 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       
       debugPrint('[Debug] 마커 제거 및 실시간 채널 현황 갱신 완료: $officerId');
     }
+  }
+
+  // 사건 종료는 데이터를 완전히 지우는 개념이 아니라 처리 완료로 보는 흐름이다.
+  // 현재는 로컬 상태만 갱신하고, 나중에는 이 함수 앞뒤에 백엔드 종료 API를 연결하면 된다.
+  Future<void> _confirmCloseReport(String reportId) async {
+    final shouldClose = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('사건 종료'),
+          content: const Text('이 사건을 종료하시겠습니까?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              child: const Text('종료'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldClose == true) {
+      _closeReport(reportId);
+    }
+  }
+
+  void _closeReport(String reportId) {
+    final marker = _reportMarkers[reportId];
+    final report = _reports[reportId];
+
+    if (report == null || report.status == ReportStatus.closed) {
+      return;
+    }
+
+    // 네이버 지도 JS API에서는 setMap(null)로 지도에서 마커를 제거 하는 방식이므로, 해당 명세에 맞추어 마커 제거 처리
+    if (marker != null) {
+      marker.callMethod('setMap'.toJS, null);
+    }
+
+    setState(() {
+      _reportMarkers.remove(reportId);
+      // 사건 종료 후에도 목록과 상세에서 확인할 수 있도록 데이터를 삭제하지 않고 상태만 바꿈
+      _reports[reportId] = report.copyWith(
+        status: ReportStatus.closed,
+        closedAt: DateTime.now(),
+      );
+      _selectedReportId = reportId;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('사건을 종료했습니다.')),
+    );
+  }
+
+  // 긴급도 4가지 상태
+  String _severityLabel(String severity) {
+    switch (severity) {
+      case 'URGENT':
+        return '코드0 (긴급)';
+      case 'HIGH':
+        return '코드1';
+      case 'MEDIUM':
+        return '코드2';
+      case 'LOW':
+      default:
+        return '코드3 (비긴급)';
+    }
+  }
+
+  // 긴급도에 따른 색상
+  Color _severityColor(String severity) {
+    switch (severity) {
+      case 'URGENT':
+        return Colors.red;
+      case 'HIGH':
+        return Colors.deepOrange;
+      case 'MEDIUM':
+        return Colors.orange;
+      case 'LOW':
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  Widget _buildReportDetailPanel(double width) {
+    final selectedReportId = _selectedReportId;
+    final report = selectedReportId == null ? null : _reports[selectedReportId];
+
+    if (report == null) {
+      return const SizedBox.shrink();
+    }
+
+    // 긴급도에 따른 색상과 상태에 따른 스타일을 미리 계산하여 변수에 저장 (코드 가독성 및 중복 제거)
+    final severityColor = _severityColor(report.severity);
+    final isClosed = report.status == ReportStatus.closed;
+
+    return Material(  // 패널 배경과 그림자 효과를 위해 Material 위젯으로 감싸줌
+      elevation: 16,
+      borderRadius: BorderRadius.circular(12),
+      color: Colors.white,
+      child: SizedBox(
+        width: width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFF1B3B6F),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.crisis_alert, color: Colors.white),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      '사건 상세',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '닫기',
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _selectedReportId = null;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded( // 내용이 많을 수 있으므로 스크롤 가능하도록 감싸줌
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: severityColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: severityColor.withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            _severityLabel(report.severity),
+                            style: TextStyle(
+                              color: severityColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isClosed
+                                ? Colors.grey.withValues(alpha: 0.14)
+                                : Colors.green.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isClosed
+                                  ? Colors.grey.withValues(alpha: 0.45)
+                                  : Colors.green.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            isClosed ? '종결' : '접수',
+                            style: TextStyle(
+                              color: isClosed ? Colors.grey.shade700 : Colors.green.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            report.title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      '상세 내용',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF4B5563),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      report.description,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.5,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    _buildReportInfoRow(
+                      icon: Icons.place,
+                      label: '위치',
+                      value: '${report.lat.toStringAsFixed(6)}, ${report.lng.toStringAsFixed(6)}',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildReportInfoRow(
+                      icon: Icons.access_time,
+                      label: '접수 시간',
+                      value: _formatReportTime(report.createdAt),
+                    ),
+                    const SizedBox(height: 12),
+                    if (report.closedAt != null) ...[
+                      const SizedBox(height: 12),
+                      _buildReportInfoRow(
+                        icon: Icons.task_alt,
+                        label: '종료 시간',
+                        value: _formatReportTime(report.closedAt!),
+                      ),
+                    ],
+                    _buildReportInfoRow(
+                      icon: Icons.tag,
+                      label: '사건 ID',
+                      value: report.id,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _selectedReportId = null;
+                        });
+                      },
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('패널 닫기'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: isClosed ? null : () => _confirmCloseReport(report.id),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.task_alt),
+                      label: const Text('사건 종료'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 사건 상세 패널에서 각 정보 항목을 아이콘과 함께 일관된 스타일로 보여주는 재사용 가능한 위젯
+  Widget _buildReportInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF4B5563)),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 72,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF4B5563),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(color: Color(0xFF111827)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // DateTime 객체를 'YYYY-MM-DD HH:MM' 형식의 문자열로 변환하는 함수
+  String _formatReportTime(DateTime time) {
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+
+    return '${time.year}-${twoDigits(time.month)}-${twoDigits(time.day)} '
+        '${twoDigits(time.hour)}:${twoDigits(time.minute)}';
   }
 
   // 전체 및 특정 관할 구역을 선택해 무전 메시지를 전파하는 팝업 다이얼로그
@@ -641,6 +1002,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       lng: lng,
                       position: position,
                       title: title,
+                      description: description,
                       severity: selectedSeverity,
                     );
 
@@ -673,6 +1035,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   void _toggleReportList() {
     setState(() {
       _isReportListOpen = !_isReportListOpen;
+      if (_isReportListOpen) {
+        _selectedReportId = null;
+      }
     });
   }
 
@@ -733,6 +1098,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 화면 크기에 따라 사건 상세 패널의 너비를 유동적으로 조절하되, 최소 360px에서 최대 720px 사이로 제한
+    final reportDetailWidth =
+        (MediaQuery.of(context).size.width * 0.46).clamp(360.0, 720.0).toDouble();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -822,13 +1191,29 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ),
             ),
           ),
+          if (_selectedReportId != null)  // 사건 상세 패널은 선택된 사건이 있을 때만 화면 우측에 표시
+            Positioned(
+              top: 24,
+              right: 24,
+              bottom: 24,
+              child: _buildReportDetailPanel(reportDetailWidth),
+            ),
           if (_isReportListOpen)
           Positioned(
             top: 24,
             right: 24,
             bottom: 24,
             width: 360,
-            child: AdminDashboardList(onClose: _toggleReportList,),
+            child: AdminDashboardList(  // 사건 목록 패널은 _isReportListOpen이 true일 때만 화면 우측에 표시
+              onClose: _toggleReportList,
+              reports: _reports.values.toList(),
+              onReportTap: (reportId) {
+                setState(() {
+                  _selectedReportId = reportId;
+                  _isReportListOpen = false;
+                });
+              },
+            ),
           ),
         ],
       ),
