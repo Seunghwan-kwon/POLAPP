@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -60,10 +61,7 @@ class _MapHomePageState extends State<MapHomePage> {
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
   PoliceFacility? _selectedFacility;
 
-  static const OfficerProfile _officerProfile = OfficerProfile(
-    name: '홍길동',
-    rank: '순경',
-  );
+  OfficerProfile _officerProfile = const OfficerProfile(name: '로딩 중...', rank: '');
 
   NaverMapController? _mapController; // 네이버 지도 조작을 위한 컨트롤러 인스턴스
   StreamSubscription<Position>? _positionStream;  // 실시간 기기 위치 업데이트를 감지하는 스트림 구독 객체
@@ -71,21 +69,37 @@ class _MapHomePageState extends State<MapHomePage> {
 
   // 웹소켓 및 동료 마커 관리를 위한 변수
   io.Socket? _socket; // 서버와 통신할 소켓 객체
-  final String _myOfficerId = 'P-1001'; // 내 임시 경찰관 ID (나중에 로그인 정보로 교체)
+  String _myOfficerId = ''; // 내 경찰관 ID
+  String _myRegion = ''; // 내 관할 지역
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
+  final Map<String, Map<String, String>> _colleagueProfiles = {}; // 다른 경찰관들의 이름, 계급, 소속을 저장해둘 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
 
   // 메시지 내역을 저장할 리스트
   final List<RadioMessage> _radioLogs = [];
 
-  Timer? _locationTimer;
-
   @override
   void initState() {
     super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      // 로그인으로 저장된 정보를 로드
+      _myOfficerId = prefs.getString('officerId') ?? 'UNKNOWN';
+      _myRegion = prefs.getString('officerRegion') ?? 'SEOUL_NOWON'; 
+      final String myName = prefs.getString('officerName') ?? '이름 미상';
+      final String myRank = prefs.getString('officerRank') ?? '계급 미상';
+      
+      _officerProfile = OfficerProfile(name: myName, rank: myRank);
+    });
+
+    debugPrint('접속된 사번: $_myOfficerId');
+
     _startLocationTracking(); // 화면 로딩과 동시에 백그라운드에서 기기 위치 추적 시작
-    _connectWebSocket();  // 앱 동작 시 소켓 연결
-    _startLocationBroadcastTimer();
+    _connectWebSocket(); // 앱 동작 시 소켓 연결
   }
 
   @override
@@ -93,20 +107,7 @@ class _MapHomePageState extends State<MapHomePage> {
     _positionStream?.cancel();  // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
     _socket?.dispose();// 화면 종료 시 통신도 종료
     _policeMarkerService.dispose();
-    _locationTimer?.cancel();
     super.dispose();
-  }
-
-  void _startLocationBroadcastTimer() {
-    _locationTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_myLocationMarker != null && _socket != null && _socket!.connected) {
-        _socket!.emit('sendMyLocation', {
-          'officerId': _myOfficerId,
-          'latitude': _myLocationMarker!.position.latitude,
-          'longitude': _myLocationMarker!.position.longitude,
-        });
-      }
-    });
   }
 
 // 웹소켓 연결 및 이벤트 리스너 설정
@@ -124,20 +125,38 @@ class _MapHomePageState extends State<MapHomePage> {
       debugPrint('WebSocket connected');
       _socket?.emit('join', {
         'officerId': _myOfficerId,
-        'region': 'SEOUL_NOWON' // 관할 지역 추가
+        'region': _myRegion
       });
     });
+
+    if (_myLocationMarker != null) {
+        _socket!.emit('sendMyLocation', {
+          'officerId': _myOfficerId,
+          'latitude': _myLocationMarker!.position.latitude,
+          'longitude': _myLocationMarker!.position.longitude,
+        });
+      }
 
     // 서버 연결 실패 시 에러 로그 출력
     _socket?.onConnectError(
       (error) => debugPrint('WebSocket connect error: $error'),
     );
 
-    // 서버로부터 다른 경찰관의 위치 데이터를 수신했을 때
+    // 서버로부터 다른 경찰관의 위치 및 상세 데이터를 수신했을 때
     _socket?.on('updateColleagueLocation', (data) {
       final String officerId = data['officerId'].toString();
       final double lat = (data['latitude'] as num).toDouble();
       final double lng = (data['longitude'] as num).toDouble();
+      
+      // 만약 처음 보는 사번이라면 프로필 정보를 캐시에 저장 (백엔드에서 이름/계급 등을 보내줬을 때만 저장)
+      if (!_colleagueProfiles.containsKey(officerId) && data.containsKey('name')) {
+        _colleagueProfiles[officerId] = {
+          'name': data['name'] ?? '이름 미상',
+          'rank': data['rank'] ?? '계급 미상',
+          'affiliation': data['affiliation'] ?? '소속 미상',
+        };
+      }
+
       _updateColleagueMarker(officerId, NLatLng(lat, lng));
     });
 
@@ -184,26 +203,95 @@ class _MapHomePageState extends State<MapHomePage> {
     _socket?.connect();
   }
 
-// 동료 마커를 지도에 갱신하는 함수
+  // 동료 마커를 지도에 갱신하고 클릭 이벤트를 부여하는 함수
   void _updateColleagueMarker(String officerId, NLatLng latLng) {
     if (_mapController == null || officerId == _myOfficerId) return;
 
     setState(() {
       if (_colleagueMarkers.containsKey(officerId)) {
-        // 이미 지도에 있는 동료면 위치만 이동
         _colleagueMarkers[officerId]!.setPosition(latLng);
       } else {
-        // 처음 보는 동료면 새로운 마커 생성해서 지도에 추가
+        // 내 캐시(수첩)에서 이 사번의 프로필을 꺼내옴
+        final profile = _colleagueProfiles[officerId];
+        final name = profile?['name'] ?? officerId;
+        final rank = profile?['rank'] ?? '';
+        final affiliation = profile?['affiliation'] ?? '';
+
         final newMarker = NMarker(
           id: officerId,
           position: latLng,
-          iconTintColor: Colors.blue, // 내 마커와 색상으로 구분 (파란색)
-          caption: NOverlayCaption(text: officerId),  // 마커 아래에 ID 표시
+          iconTintColor: Colors.blue,
+          caption: NOverlayCaption(text: name), 
         );
+
+        newMarker.setOnTapListener((overlay) {
+          _showColleagueInfoBottomSheet(
+            name: name,
+            rank: rank,
+            affiliation: affiliation,
+          );
+        });
+
         _colleagueMarkers[officerId] = newMarker;
         _mapController!.addOverlay(newMarker);
       }
     });
+  }
+
+  // 마커 터치 시 동료 경찰관의 상세 정보를 보여주는 하단 바텀 시트 UI
+  void _showColleagueInfoBottomSheet({
+    required String name,
+    required String rank,
+    required String affiliation,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)), // 윗부분 둥글게 처리
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min, // 내용물 크기만큼만 시트 높이를 설정
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '현장 경찰관 정보',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B3B6F)),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE5E7EB),
+                  child: Icon(Icons.person, color: Colors.black54),
+                ),
+                title: Text(
+                  '$rank $name', // 예: 순경 홍길동
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ), 
+                subtitle: Text(affiliation), // 예: 노원경찰서 월계지구대
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context), // 닫기 버튼 누르면 시트 내리기
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1B3B6F),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('확인', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // 동료 경찰관 연결 해제 시 지도에서 마커를 완전히 지우는 함수
@@ -300,7 +388,7 @@ class _MapHomePageState extends State<MapHomePage> {
     if (_socket != null && _socket!.connected) {
       final messageData = {
         'officerId': _myOfficerId,
-        'region': 'SEOUL_NOWON',
+        'region': _myRegion,
         'message': text,
         'timestamp': DateTime.now().toIso8601String(), // 현재 시간을 표준 문자열로 변환
       };

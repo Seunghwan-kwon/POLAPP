@@ -64,7 +64,7 @@ class AdminDashboardList extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: sortedReports.length,
-                    separatorBuilder: (_, __) => const Divider(height: 20),
+                    separatorBuilder: (_, _) => const Divider(height: 20),
                     itemBuilder: (context, index) {
                       final report = sortedReports[index];
                       final isClosed = report.status == ReportStatus.closed;
