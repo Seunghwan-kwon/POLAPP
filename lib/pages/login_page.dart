@@ -1,8 +1,8 @@
 import 'dart:convert'; // JSON 파싱을 위해 추가
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
 import 'package:http/http.dart' as http; // HTTP 통신 패키지 임포트
 import 'map_home_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -65,15 +65,20 @@ class _LoginPageState extends State<LoginPage> {
         // 백엔드 인증 성공
         final dynamic data = jsonDecode(response.body);
         final String validatedId = data['officerId'] ?? officerId; 
-        final String token = data['token'] ?? 'temp-token'; // 백엔드에서 아직 token을 안 준다면 임시값 사용
+        final String token = data['token'] ?? 'temp-token'; 
+        final String name = data['name'] ?? '이름 미상';
+        final String rank = data['rank'] ?? '계급 미상';
+        final String region = data['region'] ?? 'UNKNOWN_REGION';
 
-        // 휴대폰 내부 금고(SharedPreferences)에 인증 정보를 안전하게 저장합니다.
-        await AuthService.login(
-          officerId: validatedId,
-          token: token,
-        );
+        // 휴대폰 내부 금고(SharedPreferences)에 인증 정보를 안전하게 저장
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('officerId', validatedId);
+        await prefs.setString('authToken', token); 
+        await prefs.setString('officerName', name);
+        await prefs.setString('officerRank', rank);
+        await prefs.setString('officerRegion', region);
 
-        debugPrint('[Auth] 로그인 성공! 사번: $validatedId');
+        debugPrint('[Auth] 로그인 성공! 사번: $validatedId, $rank $name');
 
         // 성공 시 지도 화면으로 이동
         if (mounted) {

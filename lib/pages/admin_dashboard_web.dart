@@ -30,7 +30,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final Map<String, Report> _reports = {}; // 사건 상세 내용을 id 기준으로 보관하는 로컬 상태
   String? _selectedReportId; // 우측 상세 패널에 표시할 현재 선택 사건 id
   final List<js.JSAny> _mapEventHandlers = [];
-  bool _areMapGesturesEnabled = true;
   bool _isCreateReportDialogOpen = false; // 사건 입력창이 이미 열려 있는지 확인하여 중복 표시를 방지
   bool _isWaitingForReportLocation = false; // 사건 접수 확인 후, 지도에서 사건 위치 클릭을 기다리는 상태
 
