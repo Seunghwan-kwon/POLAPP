@@ -2,7 +2,7 @@ import jwt from"jsonwebtoken";
 import{Server,Socket}from"socket.io";
 import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
-import Case,{GetOfficerIdsResultCode}from"./Case.js";
+import Report from"./Report.js";
 import User from"./User.js";
 import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
@@ -17,7 +17,7 @@ declare module"http"{
 }
 declare module"express-session"{
 	interface SessionData{
-		userId:number|null
+		officerId:number|null
 	}
 }
 const app:Application=express();
@@ -62,17 +62,22 @@ interface ServerToClientEvents{
 }
 const io=new Server<ClientToServerEvents,ServerToClientEvents>(httpServer);
 io.engine.use(sessionMiddleware);
-class Admin{
-	static async create(userId:number){
-	}
-}
 interface LoginRequestBody{
 	officerId:string,
 	matchingCode:string
 }
 app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 	const{officerId,matchingCode}=req.body;
-	let conn
+	console.log(`[${getDateStr()}] /login officerId=${officerId},matchingCode=${matchingCode}`);
+	if(officerId==null){
+		res.json({code:-1});
+		return;
+	}
+	if(matchingCode==null){
+		res.json({code:-2});
+		return;
+	}
+	let conn;
 	try{
 		conn=await getDBConnection();
 		const officer=await Officer.findByCode(conn,officerId,appServer);
@@ -94,6 +99,7 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 			process.env.jwtSecret||"0000",
 			{expiresIn:"1h"}
 		);
+		req.session.officerId=officer.id;
 		res.status(200).json({
 			status:"success",
 			officerId:officer.code,
@@ -109,6 +115,7 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 		conn?.release();
 	}
 });
+/*
 interface AssignOfficerRequestBody{
 	caseId:number,
 	officerId:number
@@ -208,6 +215,7 @@ app.put("/case/:id/setComplete",async(req:Request,res:Response)=>{
 		conn?.release();
 	}
 });
+*/
 interface CreateUserRequestBody{
 	email:string,
 	passwd:string,
@@ -225,7 +233,7 @@ app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
 		res.json({code:-1});
 		return;
 	}
-	const createdBy=req.session?.userId;
+	const createdBy=req.session?.officerId;
 	if(createdBy==null){
 		res.json({
 			code:-1
@@ -251,6 +259,7 @@ app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
 		conn?.release();
 	}
 });
+/*
 interface UserLoginRequestBody{
 	email:string,
 	passwd:string
@@ -288,6 +297,8 @@ app.post("/user/login",async(req:Request<{},{},UserLoginRequestBody>,res:Respons
 		conn?.release();
 	}
 });
+*/
+/*
 interface DeleteUserParams{
 	id:number
 }
@@ -315,13 +326,129 @@ app.delete("/user/:id",async(req:Request<DeleteUserParams>,res:Response)=>{
 		conn?.release();
 	}
 });
+*/
+interface GetReportsQuery{
+	status:string|null
+}
+app.get("/reports",async(req:Request<{},{},{},GetReportsQuery>,res:Response)=>{
+	let{status}=req.query;
+	const requestedBy=req.session?.officerId;
+	console.log(`[${getDateStr()}] GET /reports requestedBy=${requestedBy},status=${status}`);
+	if(requestedBy==null){
+		res.json({code:-1});
+		return;
+	}
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const ids=await Report.select(conn,status);
+		if(ids==null){
+			res.json({code:-2});
+			return;
+		}
+		const reports=[];
+		for(const id of ids){
+			const report=await Report.getCached(id,conn);
+			reports.push(report);
+		}
+		res.json({
+			code:0,
+			result:reports
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-3});
+	}finally{
+		conn?.release();
+	}
+});
+interface PatchReportParams{
+	reportId:string
+}
+app.patch("/reports/:reportId/close",async(req:Request<PatchReportParams>,res:Response)=>{
+	let{reportId}=req.params;
+	const closedBy=req.session?.officerId;
+	console.log(`[${getDateStr()}] PATCH /reports/${reportId}/close closedBy=${closedBy}`);
+	if(closedBy==null){
+		res.json({
+			code:-1
+		});
+		return;
+	}
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const splitted=reportId.split("-");
+		let id=0;
+		if(splitted.length==2){
+			id=Number(splitted[1]);
+		}else{
+			id=Number(reportId);
+		}
+		const report=await Report.getCached(id,conn);
+		if(report==null){
+			res.json({code:-2});
+			return;
+		}
+		const result=await report.close(closedBy,conn);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-3});
+	}finally{
+		conn?.release();
+	}
+});
+interface CreateReportRequestBody{
+	title:string,
+	description:string,
+	status:string|null,
+	severity:string,
+	latitude:number,
+	longitude:number,
+	createdAt:string
+}
+app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Response)=>{
+	const{title,description,severity,status,latitude,longitude,createdAt}=req.body;
+	const createdBy=req.session?.officerId;
+	console.log(`[${getDateStr()}] POST /reports createdBy=${createdBy},title=${title}`);
+	if(createdBy==null){
+		res.json({
+			code:-1
+		});
+		return;
+	}
+	let conn;
+	try{
+		conn=await getDBConnection();
+		const result=await Report.create(
+			title,description,
+			severity,latitude,longitude,
+			status,createdBy,createdAt,
+			null,null,
+			conn
+		);
+		res.json({
+			code:0,
+			result:result
+		});
+	}catch(e){
+		console.error(e);
+		res.json({code:-2});
+	}finally{
+		conn?.release();
+	}
+});
 interface CreateOfficerRequestBody{
 	userId:number,
 	code:string
 }
 app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Response)=>{
 	const{userId,code}=req.body;
-	const createdBy=req.session?.userId;
+	const createdBy=req.session?.officerId;
 	if(createdBy==null){
 		res.json({
 			code:-1
@@ -348,7 +475,7 @@ interface DeleteOfficerParams{
 }
 app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>{
 	const{id}=req.params;
-	const updatedBy=req.session?.userId;
+	const updatedBy=req.session?.officerId;
 	if(updatedBy==null){
 		res.json({
 			code:-1

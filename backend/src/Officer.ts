@@ -1,7 +1,6 @@
 import{Socket}from"socket.io";
 import AppServer from"./AppServer.js";
 import DBConnection from"./DBConnection.js";
-import Case from"./Case.js";
 import PendingMessage from"./PendingMessage.js";
 import Region from"./Region.js";
 import Role from"./Role.js";
@@ -32,6 +31,7 @@ class CreateResult{
 		this.officer=officer;
 	}
 }
+/*
 enum GetCaseResultCode{
 	Success=0,
 	Error=-1
@@ -44,6 +44,7 @@ class GetCaseResult{
 		this._case=_case;
 	}
 }
+*/
 enum FindResultCode{
 	Success=0,
 	Error=-1
@@ -113,6 +114,7 @@ export default class Officer{
 		officer.code=code;
 		return officer;
 	}
+	/*
 	async getCase(conn:DBConnection):Promise<GetCaseResult>{
 		try{
 			const caseId=await conn.selectSingle<number>(
@@ -138,6 +140,7 @@ export default class Officer{
 		}finally{
 		}
 	}
+        */
 	static async create(conn:DBConnection,id:number,code:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
 		try{
 			await conn.beginTransaction();
