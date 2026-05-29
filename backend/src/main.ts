@@ -21,6 +21,7 @@ declare module"express-session"{
 	}
 }
 const app:Application=express();
+app.set("trust proxy",1);
 app.use(express.static("public"));
 app.use(express.json());
 function getPortPrefix(){
@@ -105,7 +106,11 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 		res.status(200).json({
 			status:"success",
 			officerId:officer.code,
-			token:token
+			token:token,
+			name:officer.name,
+			rank:officer.rank,
+			region:officer.region?.code,
+			affiliaton:officer.affiliation
 		});
 	}catch(e){
 		console.error(e);
@@ -416,11 +421,10 @@ interface CreateReportRequestBody{
 	status:string|null,
 	severity:string,
 	latitude:number,
-	longitude:number,
-	createdAt:string
+	longitude:number
 }
 app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Response)=>{
-	const{title,description,severity,status,latitude,longitude,createdAt}=req.body;
+	const{title,description,severity,status,latitude,longitude}=req.body;
 	const createdBy=req.session?.officerId;
 	console.log(`[${getDateStr()}] POST /reports createdBy=${createdBy},title=${title}`);
 	if(createdBy==null){
@@ -435,7 +439,7 @@ app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Respons
 		const report=await Report.create(
 			title,description,
 			severity,latitude,longitude,
-			status,createdBy,createdAt,
+			status,createdBy,new Date(),
 			null,null,
 			conn
 		);
@@ -453,10 +457,13 @@ app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Respons
 });
 interface CreateOfficerRequestBody{
 	userId:number,
-	code:string
+	code:string,
+	name:string,
+	rank:string,
+	affiliation:string
 }
 app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Response)=>{
-	const{userId,code}=req.body;
+	const{userId,code,name,rank,affiliation}=req.body;
 	const createdBy=req.session?.officerId;
 	if(createdBy==null){
 		res.json({
@@ -467,7 +474,7 @@ app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Respon
 	let conn;
 	try{
 		conn=await getDBConnection();
-		const result=await Officer.create(conn,userId,code,createdBy,appServer);
+		const result=await Officer.create(conn,userId,code,name,rank,affiliation,createdBy,appServer);
 		res.json({
 			code:0,
 			result:result

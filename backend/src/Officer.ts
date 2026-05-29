@@ -31,20 +31,6 @@ class CreateResult{
 		this.officer=officer;
 	}
 }
-/*
-enum GetCaseResultCode{
-	Success=0,
-	Error=-1
-}
-class GetCaseResult{
-	code:GetCaseResultCode;
-	_case:Case|null;
-	constructor(code:GetCaseResultCode,_case:Case|null){
-		this.code=code;
-		this._case=_case;
-	}
-}
-*/
 enum FindResultCode{
 	Success=0,
 	Error=-1
@@ -62,18 +48,30 @@ export default class Officer{
 	code:string;
 	x:number;
 	y:number;
+	name:string;
+	rank:string;
+	affiliation:string;
 	region:Region|null;
 	role:Role|null;
 	sockets:Map<string,Socket>
+	initialLocationUpdate:boolean;
 	appServer:AppServer;
-	constructor(id:number,appServer:AppServer){
+	constructor(
+		id:number,code:string,
+		name:string,rank:string,affiliation:string,
+		appServer:AppServer
+	){
 		this.id=id;
 		this.x=0;
 		this.y=0;
 		this.region=null;
 		this.role=null;
-		this.code="(unknown)";
+		this.code=code;
+		this.name=name;
+		this.rank=rank;
+		this.affiliation=affiliation;
 		this.sockets=new Map<string,Socket>();
+		this.initialLocationUpdate=true;
 		this.appServer=appServer;
 	}
 	static cached=new Map<number,Officer|null>();
@@ -81,14 +79,18 @@ export default class Officer{
 		let officer=Officer.cached.get(id);
 		if(officer===undefined){
 			const row=await conn.selectRow<any>(
-				"select id from tblOfficer where id=? limit 1;",
+				"select id,code,name,rank,affiliation from tblOfficer where id=? limit 1;",
 				[id]
 			);
 			if(row==null){
 				Officer.cached.set(id,null);
 				return null;
 			}
-			officer=new Officer(id,appServer);
+			const code=String(row[1]);
+			const name=String(row[2]);
+			const rank=String(row[3]);
+			const affiliation=String(row[4]);
+			officer=new Officer(id,code,name,rank,affiliation,appServer);
 			Officer.cached.set(id,officer);
 		}
 		return officer;
@@ -111,42 +113,14 @@ export default class Officer{
 		if(!officer){
 			return null;
 		}
-		officer.code=code;
 		return officer;
 	}
-	/*
-	async getCase(conn:DBConnection):Promise<GetCaseResult>{
-		try{
-			const caseId=await conn.selectSingle<number>(
-				"select caseId from tblOfficerCase where officerId=? limit 1;",
-				[this.id]
-			);
-			if(caseId==null){
-				return new GetCaseResult(
-					GetCaseResultCode.Success,
-					null
-				);
-			}
-			const _case=await Case.getCached(caseId,conn);
-			return new GetCaseResult(
-				GetCaseResultCode.Success,
-				_case
-			);
-		}catch(err:any){
-			return new GetCaseResult(
-				GetCaseResultCode.Error,
-				null
-			);
-		}finally{
-		}
-	}
-        */
-	static async create(conn:DBConnection,id:number,code:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
+	static async create(conn:DBConnection,id:number,code:string,name:string,rank:string,affiliation:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
 		try{
 			await conn.beginTransaction();
 			const insertId=await conn.insert(
-				"insert into tblOfficer(userId,officerId,createdBy)values(?,?,?);",
-				[id,code,createdBy]
+				"insert into tblOfficer(userId,officerId,name,rank,affiliation,createdBy)values(?,?,?,?,?,?);",
+				[id,code,name,rank,affiliation,createdBy]
 			);
 			if(insertId==null){
 				await conn.rollback();
@@ -156,8 +130,7 @@ export default class Officer{
 				);
 			}
 			await conn.commit();
-			const officer=new Officer(insertId,appServer);
-			officer.code=code;
+			const officer=new Officer(insertId,code,name,rank,affiliation,appServer);
 			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
 		}catch(err:any){
@@ -247,7 +220,15 @@ export default class Officer{
 		if(region==null){
 			return-1;
 		}
-		const payload={
+		const payload=peer.initialLocationUpdate?{
+			officerId:peer.code,
+			region:region.code,
+			latitude:peer.x,
+			longitude:peer.y,
+			name:peer.name,
+			rank:peer.rank,
+			affiliation:peer.affiliation
+		}:{
 			officerId:peer.code,
 			region:region.code,
 			latitude:peer.x,

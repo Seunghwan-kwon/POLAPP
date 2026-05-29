@@ -35,14 +35,14 @@ export default class Report{
 	longitude:number;
 	status:string;
 	createdBy:number;
-	createdAt:string;
+	createdAt:Date;
 	closedBy:number|null;
-	closedAt:string|null;
+	closedAt:Date|null;
 	constructor(
 		id:number,title:string,description:string,severity:string,
 		longitude:number,latitude:number,status:string,
-		createdBy:number,createdAt:string,
-		closedBy:number|null,closedAt:string|null
+		createdBy:number,createdAt:Date,
+		closedBy:number|null,closedAt:Date|null
 	){
 		this.id=id;
 		this.title=title;
@@ -75,9 +75,9 @@ export default class Report{
 			const longitude=Number(row[5]);
 			const latitude=Number(row[6]);
 			const createdBy=Number(row[7]);
-			const createdAt=String(row[8]);
+			const createdAt=new Date(row[8]);
 			const closedBy=Number(row[9]);
-			const closedAt=String(row[10]);
+			const closedAt=new Date(row[10]);
 			report=new Report(
 				id,title,description,severity,
 				longitude,latitude,status,
@@ -91,8 +91,8 @@ export default class Report{
 		title:string,description:string,
 		severity:string,
 		latitude:number,longitude:number,
-		status:string|null,createdBy:number,createdAt:string,
-		closedBy:number|null,closedAt:string|null,
+		status:string|null,createdBy:number,createdAt:Date,
+		closedBy:number|null,closedAt:Date|null,
 		conn:DBConnection
 	):Promise<Report|null>{
 		try{
@@ -104,7 +104,7 @@ export default class Report{
 				[
 					title,description,severity,
 					latitude,longitude,status,
-					createdBy,new Date(),
+					createdBy,createdAt,
 					closedBy,closedAt
 				]
 			);
@@ -201,10 +201,10 @@ export default class Report{
 		);
 		return hasPermission!=null;
 	}
-	async setStatus(status:string,conn:DBConnection):Promise<number>{
+	async setStatus(status:string,closedBy:number,closedAt:Date,conn:DBConnection):Promise<number>{
 		const changedCount=await conn.update(
-			"update tblReport set status=? where id=? and status=?;",
-			[status,this.id,this.status]
+			"update tblReport set status=?,closedBy=?,closedAt=? where id=? and status=? limit 1;",
+			[status,closedBy,closedAt,this.id,this.status]
 		);
 		if(changedCount==1){
 			this.status=status;
@@ -214,7 +214,8 @@ export default class Report{
 	async close(closedBy:number,conn:DBConnection):Promise<ReportCloseResult>{
 		try{
 			await conn.beginTransaction();
-			const changedCount=await this.setStatus("CLOSED",conn);
+			const closedAt=new Date();
+			const changedCount=await this.setStatus("CLOSED",closedBy,closedAt,conn);
 
 			if(changedCount!=1){
 				await conn.rollback();
@@ -223,6 +224,9 @@ export default class Report{
 				);
 			}
 			await conn.commit();
+			this.status="CLOSED";
+			this.closedBy=closedBy;
+			this.closedAt=closedAt;
 			return new ReportCloseResult(
 				ReportCloseResultCode.Success
 			);

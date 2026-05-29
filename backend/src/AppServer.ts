@@ -96,6 +96,9 @@ export default class AppServer{
 					peer.syncPeerLocation(officer);
 				}
 			}
+			if(officer.initialLocationUpdate){
+				officer.initialLocationUpdate=false;
+			}
 		}
 		this.updatedOfficers.clear();
 	}
@@ -109,6 +112,7 @@ export default class AppServer{
 				return null;
 			}
 			const origOfficers=this.officers.values();
+			officer.addSocket(socket);
 			for(const origOfficer of origOfficers){
 				if(origOfficer==officer){
 					continue;
@@ -127,7 +131,6 @@ export default class AppServer{
 					officer.setRole(role);
 				}
 			}
-			officer.addSocket(socket);
 			this.officers.set(officer.id,officer);
 			return officer;
 		}catch(e:any){
