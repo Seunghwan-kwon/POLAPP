@@ -37,8 +37,9 @@ app.use((req,res,next)=>{
 	//if(origin&&allowedOrigins.includes(origin)){
 		res.header("Access-Control-Allow-Origin",origin);
 	//}
-	res.header("Access-Control-Allow-Methods","GET, POST, PUT, DELETE, OPTIONS");
-	res.header("Access-Control-Allow-Headers","Content-Type");
+	res.header("Access-Control-Allow-Credentials","true");
+	res.header("Access-Control-Allow-Methods","GET, POST, PUT, DELETE, OPTIONS, PATCH");
+	res.header("Access-Control-Allow-Headers","Content-Type, Authorization");
 	if(req.method==="OPTIONS"){
 		return res.sendStatus(200);
 	}
@@ -50,7 +51,8 @@ const sessionMiddleware=session({
 	saveUninitialized:false,
 	cookie:{
 		httpOnly:true,
-		secure:false,
+		secure:true,
+		sameSite:"none",
 		maxAge:1000*3600
 	}
 });
@@ -391,9 +393,15 @@ app.patch("/reports/:reportId/close",async(req:Request<PatchReportParams>,res:Re
 			return;
 		}
 		const result=await report.close(closedBy,conn);
+		appServer.broadcast("reportClosed",report);
 		res.json({
 			code:0,
-			result:result
+			result:{
+				id:report.id,
+				status:"CLOSED",
+				closedAt:report.closedAt,
+				closedBy:report.closedBy
+			}
 		});
 	}catch(e){
 		console.error(e);
@@ -424,16 +432,17 @@ app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Respons
 	let conn;
 	try{
 		conn=await getDBConnection();
-		const result=await Report.create(
+		const report=await Report.create(
 			title,description,
 			severity,latitude,longitude,
 			status,createdBy,createdAt,
 			null,null,
 			conn
 		);
+		appServer.broadcast("reportCreated",report);
 		res.json({
 			code:0,
-			result:result
+			result:report
 		});
 	}catch(e){
 		console.error(e);

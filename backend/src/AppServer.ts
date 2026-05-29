@@ -199,4 +199,9 @@ export default class AppServer{
 			}
 		}
 	}
+	broadcast(name:string,arg:any):void{
+		for(const officer of this.officers.values()){
+			officer.emit(name,arg);
+		}
+	}
 }

@@ -40,7 +40,7 @@ export default class Report{
 	closedAt:string|null;
 	constructor(
 		id:number,title:string,description:string,severity:string,
-		latitude:number,longitude:number,status:string,
+		longitude:number,latitude:number,status:string,
 		createdBy:number,createdAt:string,
 		closedBy:number|null,closedAt:string|null
 	){
@@ -48,8 +48,8 @@ export default class Report{
 		this.title=title;
 		this.description=description;
 		this.severity=severity;
-		this.latitude=latitude;
 		this.longitude=longitude;
+		this.latitude=latitude;
 		this.status=status;
 		this.createdBy=createdBy;
 		this.createdAt=createdAt;

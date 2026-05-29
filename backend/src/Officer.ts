@@ -223,6 +223,14 @@ export default class Officer{
 			}
 		}
 	}
+	emit(name:string,arg:any):number{
+		let result=0;
+		for(const socket of this.sockets.values()){
+			socket.emit(name,arg);
+			result++;
+		}
+		return result;
+	}
 	notifyPeerOffline(peer:Officer):number{
 		const payload={
 			officerId:peer.code,
