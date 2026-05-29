@@ -113,7 +113,7 @@ export default class Report{
 			}
 			const report=new Report(
 				insertId,title,description,severity,
-				latitude,longitude,status,
+				longitude,latitude,status,
 				createdBy,createdAt,closedBy,closedAt
 			);
 			Report.cached.set(insertId,report);
