@@ -58,13 +58,14 @@ export default class Officer{
 	appServer:AppServer;
 	constructor(
 		id:number,code:string,
-		name:string,rank:string,affiliation:string,
+		name:string,rank:string,
+		region:Region|null,affiliation:string,
 		appServer:AppServer
 	){
 		this.id=id;
 		this.x=0;
 		this.y=0;
-		this.region=null;
+		this.region=region;
 		this.role=null;
 		this.code=code;
 		this.name=name;
@@ -79,7 +80,7 @@ export default class Officer{
 		let officer=Officer.cached.get(id);
 		if(officer===undefined){
 			const row=await conn.selectRow<any>(
-				"select id,code,name,rank,affiliation from tblOfficer where id=? limit 1;",
+				"select id,code,name,rank,region,affiliation from tblOfficer where id=? limit 1;",
 				[id]
 			);
 			if(row==null){
@@ -89,8 +90,10 @@ export default class Officer{
 			const code=String(row[1]);
 			const name=String(row[2]);
 			const rank=String(row[3]);
-			const affiliation=String(row[4]);
-			officer=new Officer(id,code,name,rank,affiliation,appServer);
+			const regionId=Number(row[4]);
+			const affiliation=String(row[5]);
+			const region=await Region.getCached(regionId,conn);
+			officer=new Officer(id,code,name,rank,region,affiliation,appServer);
 			Officer.cached.set(id,officer);
 		}
 		return officer;
@@ -115,12 +118,17 @@ export default class Officer{
 		}
 		return officer;
 	}
-	static async create(conn:DBConnection,id:number,code:string,name:string,rank:string,affiliation:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
+	static async create(conn:DBConnection,id:number,code:string,name:string,rank:string,region:Region|null,affiliation:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
 		try{
 			await conn.beginTransaction();
+			const regionId=region==null?0:region.id;
 			const insertId=await conn.insert(
-				"insert into tblOfficer(userId,officerId,name,rank,affiliation,createdBy)values(?,?,?,?,?,?);",
-				[id,code,name,rank,affiliation,createdBy]
+				"insert into tblOfficer(userId,officerId,name,rank,region,affiliation,createdBy)values(?,?,?,?,?,?,?);",
+				[
+					id,code,name,rank,
+					regionId,affiliation,
+					createdBy
+				]
 			);
 			if(insertId==null){
 				await conn.rollback();
@@ -130,7 +138,7 @@ export default class Officer{
 				);
 			}
 			await conn.commit();
-			const officer=new Officer(insertId,code,name,rank,affiliation,appServer);
+			const officer=new Officer(insertId,code,name,rank,region,affiliation,appServer);
 			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
 		}catch(err:any){
@@ -276,20 +284,15 @@ export default class Officer{
 		console.log(`[Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
 		return 0;
 	}
-	setRegion(region:Region):number{
-		if(this.region!=null){
-			if(this.region==region){
-				return 1;
-			}else{
-				this.region.removeOfficer(this);
-			}
+	setRegion():number{
+		if(this.region==null){
+			return-1;
 		}
-		region.addOfficer(this);
-		this.region=region;
-		console.log(`[Officer.setRegion] officer.code=${this.code} region.code=${region.code}`);
+		this.region.addOfficer(this);
+		console.log(`[Officer.setRegion] officer.code=${this.code} region.code=${this.region.code}`);
 		return 0;
 	}
-	updateLocation(x:number,y:number):void{
+	setLocation(x:number,y:number):void{
 		this.x=x;
 		this.y=y;
 	}

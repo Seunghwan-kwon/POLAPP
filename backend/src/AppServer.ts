@@ -102,28 +102,23 @@ export default class AppServer{
 		}
 		this.updatedOfficers.clear();
 	}
-	async setOfficerJoined(officerCode:string,regionCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
+	async setOfficerJoined(officerCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
 		let conn;
 		try{
 			conn=await getDBConnection();
 			const officer=await Officer.findByCode(conn,officerCode,this);
 			if(officer==null){
-				console.log(`[setOfficerJoined] officer=null`);
+				console.log(`[${getDateStr()}] [setOfficerJoined] findByCode returned null officerCode=${officerCode}`);
 				return null;
 			}
-			const origOfficers=this.officers.values();
 			officer.addSocket(socket);
+			officer.setRegion();
+			const origOfficers=this.officers.values();
 			for(const origOfficer of origOfficers){
 				if(origOfficer==officer){
 					continue;
 				}
 				officer.syncPeerLocation(origOfficer);
-			}
-			if(regionCode!=null){
-				const region=await Region.findByCode(regionCode,conn);
-				if(region!=null){
-					officer.setRegion(region);
-				}
 			}
 			if(roleCode!=null){
 				const role=await Role.findByCode(roleCode,conn);

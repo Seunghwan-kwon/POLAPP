@@ -3,6 +3,7 @@ import{Server,Socket}from"socket.io";
 import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
 import Report from"./Report.js";
+import Region from"./Region.js";
 import User from"./User.js";
 import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
@@ -21,6 +22,7 @@ declare module"express-session"{
 	}
 }
 const app:Application=express();
+let startTime=new Date();
 app.set("trust proxy",1);
 app.use(express.static("public"));
 app.use(express.json());
@@ -69,6 +71,9 @@ interface LoginRequestBody{
 	officerId:string,
 	matchingCode:string
 }
+app.get("/startTime",(req:Request,res:Response)=>{
+	res.json({startTimeStr:getDateStr(startTime)});
+});
 app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 	const{officerId,matchingCode}=req.body;
 	console.log(`[${getDateStr()}] /login officerId=${officerId},matchingCode=${matchingCode}`);
@@ -122,107 +127,6 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 		conn?.release();
 	}
 });
-/*
-interface AssignOfficerRequestBody{
-	caseId:number,
-	officerId:number
-}
-app.post("/case/assignOfficer",async(req:Request<{},{},AssignOfficerRequestBody>,res:Response)=>{
-	const{caseId,officerId}=req.body;
-	const updatedBy=req.session?.userId;
-	if(updatedBy==null){
-		res.json({
-			code:-1
-		});
-		return;
-	}
-	let conn;
-	try{
-		conn=await getDBConnection();
-		let _case=await Case.getCached(caseId,conn);
-		if(_case==null){
-			res.json({code:-2});
-			return;
-		}
-		const result=await _case.assignOfficer(officerId,updatedBy,conn);
-		res.json({
-			code:0,
-			result:result
-		});
-	}catch(e){
-		console.error(e);
-		res.json({code:-2});
-	}finally{
-		conn?.release();
-	}
-});
-interface CreateCaseRequestBody{
-	name:string
-}
-app.post("/case",async(req:Request<{},{},CreateCaseRequestBody>,res:Response)=>{
-	const{name}=req.body;
-	if(name==null||name.length==0){
-		res.json({code:-1});
-		return;
-	}
-	const createdBy=req.session?.userId;
-	if(createdBy==null){
-		res.json({code:-2});
-		return;
-	}
-	let conn;
-	try{
-		conn=await getDBConnection();
-		const _case=await Case.create(name,createdBy,conn);
-		if(_case==null){
-			res.json({code:-3});
-			return;
-		}
-		res.json({
-			code:0,
-			caseId:_case.id
-		});
-	}catch(e){
-		console.error(e);
-		res.json({code:-4});
-	}finally{
-		conn?.release();
-	}
-});
-app.put("/case/:id/setComplete",async(req:Request,res:Response)=>{
-	const{id}=req.params;
-	const updatedBy=req.session?.userId;
-	if(updatedBy==null){
-		res.json({
-			code:-1
-		});
-		return;
-	}
-	let conn;
-	try{
-		conn=await getDBConnection();
-		const _case=await Case.getCached(Number(id),conn);
-		if(_case==null){
-			res.json({
-				code:-2
-			});
-			return;
-		}
-		const result=await _case.setComplete(updatedBy,conn);
-		res.json({
-			code:0,
-			result:result
-		});
-	}catch(e){
-		console.error(e);
-		res.json({
-			code:-2
-		});
-	}finally{
-		conn?.release();
-	}
-});
-*/
 interface CreateUserRequestBody{
 	email:string,
 	passwd:string,
@@ -465,10 +369,11 @@ interface CreateOfficerRequestBody{
 	code:string,
 	name:string,
 	rank:string,
+	regionId:number,
 	affiliation:string
 }
 app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Response)=>{
-	const{userId,code,name,rank,affiliation}=req.body;
+	const{userId,code,name,rank,regionId,affiliation}=req.body;
 	const createdBy=req.session?.officerId;
 	if(createdBy==null){
 		res.json({
@@ -479,7 +384,8 @@ app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Respon
 	let conn;
 	try{
 		conn=await getDBConnection();
-		const result=await Officer.create(conn,userId,code,name,rank,affiliation,createdBy,appServer);
+		const region=await Region.getCached(regionId,conn);
+		const result=await Officer.create(conn,userId,code,name,rank,region,affiliation,createdBy,appServer);
 		res.json({
 			code:0,
 			result:result
@@ -530,11 +436,11 @@ io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log(`[${getDateStr()}] Connected`);
 	let officer:Officer|null=null;
-	socket.on("join",async({officerId,region,role})=>{
-		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},region=${region},role=${role}`);
-		officer=await appServer.setOfficerJoined(officerId,region,role,socket);
+	socket.on("join",async({officerId,role})=>{
+		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},role=${role}`);
+		officer=await appServer.setOfficerJoined(officerId,role,socket);
 		if(officer==null){
-			console.log(`[${getDateStr()}] socket.on join Failed. officerId=${officerId},region=${region},role=${role}`);
+			console.log(`[${getDateStr()}] socket.on join Failed. officerId=${officerId},role=${role}`);
 		}
 	});
 	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
@@ -546,7 +452,7 @@ io.on("connection",(socket:Socket)=>{
 		if(officer.region==null){
 			return;
 		}
-		officer.updateLocation(latitude,longitude);
+		officer.setLocation(latitude,longitude);
 		appServer.setOfficerLocationUpdated(officer);
 	});
 	socket.on("sendRadioMessage",async({officerId,region,message,timestamp})=>{
@@ -567,5 +473,6 @@ io.on("connection",(socket:Socket)=>{
 	});
 });
 httpServer.listen(port,()=>{
+	startTime=new Date();
 	console.log(`Listening on port=${port}`);
 });
