@@ -61,7 +61,7 @@ export default class Report{
 		let report=Report.cached.get(id);
 		if(report==undefined){
 			const row=await conn.selectRow<any>(
-				"select id,title,description,severity,status,longitude,latitude,createdBy,createdAt,closedAt from tblReport where id=? limit 1;",
+				"select id,title,description,severity,status,longitude,latitude,createdBy,createdAt,closedBy,closedAt from tblReport where id=? limit 1;",
 				[id]
 			);
 			if(row==null){
@@ -81,7 +81,8 @@ export default class Report{
 			report=new Report(
 				id,title,description,severity,
 				longitude,latitude,status,
-				createdBy,createdAt,closedBy,closedAt
+				createdBy,createdAt,
+				closedBy,closedAt
 			);
 			Report.cached.set(id,report);
 		}
@@ -149,51 +150,6 @@ export default class Report{
 		}
 	}
 	/*
-	static async getOfficerIds(conn:DBConnection,caseId:number){
-		const result=new GetOfficerIdsResult();
-		try{
-			const rows=await conn.selectAll<any>(
-				"select id from tblCaseOfficer where caseId=?;",
-				[caseId]
-			);
-			for(const row of rows){
-				result.ids.push(row["id"]);
-			}
-			return result;
-		}catch(ex){
-			result.code=GetOfficerIdsResultCode.Exception1;
-			return result;
-		}finally{
-		}
-	}
-       */
-      	/*
-	async assignOfficer(officerId:number,updatedBy:number,conn:DBConnection):Promise<AssignOfficerResult>{
-		try{
-			const insertId=await conn.insert(
-				"insert into tblCaseOfficer(caseId,policeId,updatedBy)values(?,?,?);",
-				[this.id,officerId,updatedBy]
-			);
-			if(insertId==null){
-				return new AssignOfficerResult(
-					AssignOfficerResultCode.InsertFailed
-				);
-			}
-			return new AssignOfficerResult(
-				AssignOfficerResultCode.Success
-			);
-		}catch(ex){
-			return new AssignOfficerResult(
-				AssignOfficerResultCode.Exception1
-			);
-		}finally{
-		}
-	}
-       	*/
-       	/*
-	async setIncomplete(updatedBy:number){
-	}
-       	*/
 	async hasPermission(updater:number,conn:DBConnection):Promise<boolean>{
 		const hasPermission=await conn.selectSingle<number>(
 			"select 1 from tblUser as u inner join tblAdmin as a on u.id=a.userId where u.id=? and u.status=1 limit 1;",
@@ -201,6 +157,7 @@ export default class Report{
 		);
 		return hasPermission!=null;
 	}
+       */
 	async setStatus(status:string,closedBy:number,closedAt:Date,conn:DBConnection):Promise<number>{
 		const changedCount=await conn.update(
 			"update tblReport set status=?,closedBy=?,closedAt=? where id=? and status=? limit 1;",

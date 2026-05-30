@@ -436,6 +436,11 @@ app.post("/reports",async(req:Request<{},{},CreateReportRequestBody>,res:Respons
 	let conn;
 	try{
 		conn=await getDBConnection();
+		const creator=await Officer.getCached(createdBy,conn,appServer);
+		if(creator==null){
+			res.json({code:-2});
+			return;
+		}
 		const report=await Report.create(
 			title,description,
 			severity,latitude,longitude,
