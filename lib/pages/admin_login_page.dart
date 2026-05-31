@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
+import 'package:http/browser_client.dart';
 
 import 'admin_dashboard_page.dart'; 
 
@@ -40,7 +40,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       final String apiUrl = 'https://polapp.duckdns.org:444/login';
       debugPrint('[Web Auth] 로그인 시도 - ID: $adminId');
 
-      final response = await http.post(
+      // 백엔드 /reports API는 express-session 쿠키로 사용자를 식별한다.
+      // 따라서 로그인 요청도 credentials를 포함해 보내야 브라우저가 세션 쿠키를 저장하고 이후 /reports 요청에 다시 실어 보낸다.
+      final client = BrowserClient()..withCredentials = true;
+      final response = await client.post(
         Uri.parse(apiUrl),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8',

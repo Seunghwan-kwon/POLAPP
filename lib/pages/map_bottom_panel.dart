@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
+import '../models/report.dart';
 import '../models/safety_status.dart';
 
 // 하단 패널 구현 페이지
@@ -13,12 +14,14 @@ class MapBottomPanel extends StatelessWidget {
     required this.officerProfile,
     required this.status,
     this.selectedFacility,
+    this.selectedReport,
   });
 
   final ScrollController scrollController;
   final OfficerProfile officerProfile;
   final SafetyStatus status;
   final PoliceFacility? selectedFacility;
+  final Report? selectedReport;
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +156,9 @@ class MapBottomPanel extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
-                child: selectedFacility == null
+                child: selectedReport != null
+                    ? _SelectedReportCard(report: selectedReport!)
+                    : selectedFacility == null
                     ? const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -227,6 +232,100 @@ class MapBottomPanel extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SelectedReportCard extends StatelessWidget {
+  const _SelectedReportCard({required this.report});
+
+  final Report report;
+
+  @override
+  Widget build(BuildContext context) {
+    final severityColor = _severityColor(report.severity);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '선택한 사건',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: severityColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.warning_rounded, color: severityColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                report.title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          report.description.isEmpty ? '상세 설명이 없습니다.' : report.description,
+          style: const TextStyle(color: Color(0xFF4B5563), height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        _ReportInfoRow(label: '긴급도', value: report.severity),
+        _ReportInfoRow(label: '상태', value: report.status.name.toUpperCase()),
+        _ReportInfoRow(label: '접수 시각', value: _formatDateTime(report.createdAt)),
+        _ReportInfoRow(label: '위도', value: report.lat.toStringAsFixed(6)),
+        _ReportInfoRow(label: '경도', value: report.lng.toStringAsFixed(6)),
+      ],
+    );
+  }
+
+  static Color _severityColor(String severity) {
+    switch (severity.toUpperCase()) {
+      case 'CRITICAL':
+        return Colors.red;
+      case 'HIGH':
+        return Colors.deepOrange;
+      case 'MEDIUM':
+        return Colors.amber.shade700;
+      default:
+        return Colors.green;
+    }
+  }
+
+  static String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+        '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+  }
+}
+
+class _ReportInfoRow extends StatelessWidget {
+  const _ReportInfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(color: Color(0xFF4B5563)),
       ),
     );
   }

@@ -8,8 +8,11 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
+import '../models/report.dart';
 import '../models/safety_status.dart';
+import '../services/mobile_report_service.dart';
 import '../services/police_marker_service.dart';
+import '../services/report_marker_service.dart';
 import 'map_bottom_panel.dart';
 import 'setting_page.dart';
 
@@ -60,6 +63,7 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _isRadioDialogOpen = false;
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
   PoliceFacility? _selectedFacility;
+  Report? _selectedReport;
 
   OfficerProfile _officerProfile = const OfficerProfile(name: '로딩 중...', rank: '');
 
@@ -74,6 +78,8 @@ class _MapHomePageState extends State<MapHomePage> {
   final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
   final Map<String, Map<String, String>> _colleagueProfiles = {}; // 다른 경찰관들의 이름, 계급, 소속을 저장해둘 딕셔너리
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
+  final MobileReportService _mobileReportService = MobileReportService();
+  final ReportMarkerService _reportMarkerService = ReportMarkerService();
 
   // 메시지 내역을 저장할 리스트
   final List<RadioMessage> _radioLogs = [];
@@ -107,6 +113,7 @@ class _MapHomePageState extends State<MapHomePage> {
     _positionStream?.cancel();  // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
     _socket?.dispose();// 화면 종료 시 통신도 종료
     _policeMarkerService.dispose();
+    _mobileReportService.close();
     super.dispose();
   }
 
@@ -193,6 +200,40 @@ class _MapHomePageState extends State<MapHomePage> {
         _removeColleagueMarker(officerId); // 마커 삭제 함수 호출
       } catch (e) {
         debugPrint('[Error] 퇴장 데이터 파싱 에러: $e');
+      }
+    });
+
+    _socket?.on('reportCreated', (data) async {
+      final controller = _mapController;
+      if (controller == null) return;
+
+      try {
+        final report = _mobileReportService.parseReport(data);
+        await _reportMarkerService.upsertReport(
+          controller: controller,
+          report: report,
+          onReportTap: _onReportTap,
+        );
+      } catch (e) {
+        debugPrint('[Report] 사건 생성 이벤트 처리 실패: $e');
+      }
+    });
+
+    _socket?.on('reportClosed', (data) async {
+      final controller = _mapController;
+      if (controller == null || data is! Map) return;
+
+      final reportId = data['id']?.toString();
+      if (reportId == null || reportId.isEmpty) return;
+
+      await _reportMarkerService.removeReport(
+        controller: controller,
+        reportId: reportId,
+      );
+      if (_selectedReport?.id == reportId && mounted) {
+        setState(() {
+          _selectedReport = null;
+        });
       }
     });
 
@@ -495,11 +536,26 @@ class _MapHomePageState extends State<MapHomePage> {
       controller: controller,
       onFacilityTap: _onPoliceFacilityTap,
     );
+    await _loadReportMarkers(controller);
+  }
+
+  Future<void> _loadReportMarkers(NaverMapController controller) async {
+    try {
+      final reports = await _mobileReportService.fetchReports();
+      await _reportMarkerService.replaceReports(
+        controller: controller,
+        reports: reports,
+        onReportTap: _onReportTap,
+      );
+    } catch (e) {
+      debugPrint('[Report] 사건 목록 조회 실패: $e');
+    }
   }
 
   void _onPoliceFacilityTap(PoliceFacility facility) {
     setState(() {
       _selectedFacility = facility;
+      _selectedReport = null;
       _isBriefingVisible = true;
     });
 
@@ -511,6 +567,14 @@ class _MapHomePageState extends State<MapHomePage> {
           duration: const Duration(seconds: 1),
         ),
       );
+  }
+
+  void _onReportTap(Report report) {
+    setState(() {
+      _selectedReport = report;
+      _selectedFacility = null;
+      _isBriefingVisible = true;
+    });
   }
 
   @override
@@ -701,6 +765,7 @@ class _MapHomePageState extends State<MapHomePage> {
                   officerProfile: _officerProfile,
                   status: _safetyStatus,
                   selectedFacility: _selectedFacility,
+                  selectedReport: _selectedReport,
                 );
               },
             ),
