@@ -205,6 +205,7 @@ app.get("/reports",async(req:Request<{},{},{},GetReportsQuery>,res:Response)=>{
 	const authHeader=req.headers.authorization;
 	let requestedBy=req.session?.officerId;
 	console.log(`[${getDateStr()}] GET /reports requestedBy=${requestedBy},status=${status}`);
+	let authType=-1;
 	if(requestedBy==null){
 		requestedBy=authByHeader(authHeader||null);
 		if(requestedBy<0){
@@ -214,6 +215,9 @@ app.get("/reports",async(req:Request<{},{},{},GetReportsQuery>,res:Response)=>{
 			res.json({code:-2});
 			return;
 		}
+		authType=2;
+	}else{
+		authType=1;
 	}
 	let conn;
 	try{
@@ -230,6 +234,7 @@ app.get("/reports",async(req:Request<{},{},{},GetReportsQuery>,res:Response)=>{
 		}
 		res.json({
 			code:0,
+			authType,
 			result:reports
 		});
 	}catch(e){
