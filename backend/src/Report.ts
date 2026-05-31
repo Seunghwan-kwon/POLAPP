@@ -40,7 +40,7 @@ export default class Report{
 	closedAt:Date|null;
 	constructor(
 		id:number,title:string,description:string,severity:string,
-		longitude:number,latitude:number,status:string,
+		latitude:number,longitude:number,status:string,
 		createdBy:number,createdAt:Date,
 		closedBy:number|null,closedAt:Date|null
 	){
@@ -61,7 +61,7 @@ export default class Report{
 		let report=Report.cached.get(id);
 		if(report==undefined){
 			const row=await conn.selectRow<any>(
-				"select id,title,description,severity,status,longitude,latitude,createdBy,createdAt,closedBy,closedAt from tblReport where id=? limit 1;",
+				"select id,title,description,severity,status,latitude,longitude,createdBy,createdAt,closedBy,closedAt from tblReport where id=? limit 1;",
 				[id]
 			);
 			if(row==null){
@@ -80,7 +80,7 @@ export default class Report{
 			const closedAt=new Date(row[10]);
 			report=new Report(
 				id,title,description,severity,
-				longitude,latitude,status,
+				latitude,longitude,status,
 				createdBy,createdAt,
 				closedBy,closedAt
 			);
@@ -114,7 +114,7 @@ export default class Report{
 			}
 			const report=new Report(
 				insertId,title,description,severity,
-				longitude,latitude,status,
+				latitude,longitude,status,
 				createdBy,createdAt,closedBy,closedAt
 			);
 			Report.cached.set(insertId,report);

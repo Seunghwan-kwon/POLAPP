@@ -1,4 +1,4 @@
-import jwt from"jsonwebtoken";
+import jwt,{JwtPayload}from"jsonwebtoken";
 import{Server,Socket}from"socket.io";
 import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
@@ -9,7 +9,7 @@ import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
 import PendingMessage from"./PendingMessage.js";
 import*as http from"node:http";
-import*as readline from"node:readline";
+//import*as readline from"node:readline";
 import{getDateStr}from"./Utils.js";
 declare module"http"{
 	interface IncomingMessage{
@@ -102,9 +102,12 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 			res.status(401).json(failPayload);
 			return;
 		}
+		const payload={
+			officerId:officer.id
+		};
 		const token=jwt.sign(
-			{officerId:officer.id},
-			process.env.jwtSecret||"0000",
+			payload,
+			getJwtSecret(),
 			{expiresIn:"1h"}
 		);
 		req.session.officerId=officer.id;
@@ -127,6 +130,7 @@ app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 		conn?.release();
 	}
 });
+/*
 interface CreateUserRequestBody{
 	email:string,
 	passwd:string,
@@ -170,84 +174,46 @@ app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
 		conn?.release();
 	}
 });
-/*
-interface UserLoginRequestBody{
-	email:string,
-	passwd:string
+*/
+function getJwtSecret(){
+	return process.env.jwtSecret||"0000";
 }
-app.post("/user/login",async(req:Request<{},{},UserLoginRequestBody>,res:Response)=>{
-	const{email,passwd}=req.body;
-	if(email==null||email.length==0){
-		res.json({
-			code:-1
-		});
-		return;
+interface UserTokenPayload extends JwtPayload{
+	officerId:number;
+}
+function authByHeader(authHeader:string|null):number{
+	if(authHeader==null){
+		return-1;
 	}
-	if(passwd==null||passwd.length==0){
-		res.json({
-			code:-2
-		});
-		return;
+	if(!authHeader.startsWith("Bearer ")){
+		return-2;
 	}
-	let conn;
+	const token=authHeader.split(" ")[1];
 	try{
-		conn=await getDBConnection();
-		const result=await User.login(conn,email,passwd);
-		if(result.code==0){
-			req.session.userId=result.userId;
-		}
-		res.json({
-			code:0,
-			result:result
-		});
+		const decoded=jwt.verify(token,getJwtSecret())as UserTokenPayload;
+		return decoded.officerId;
 	}catch(e){
-		res.json({
-			code:-3
-		});
-	}finally{
-		conn?.release();
+		console.error(e);
+		return-3;
 	}
-});
-*/
-/*
-interface DeleteUserParams{
-	id:number
 }
-app.delete("/user/:id",async(req:Request<DeleteUserParams>,res:Response)=>{
-	const{id}=req.params;
-	const createdBy=req.session?.userId;
-	if(createdBy==null){
-		res.json({
-			code:-1
-		});
-		return;
-	}
-	let conn;
-	try{
-		conn=await getDBConnection();
-		const result=await User.remove(conn,id,createdBy);
-		res.json({
-			code:0,
-			result:result
-		});
-	}catch(ex){
-		console.error(ex);
-		res.json({code:-2});
-	}finally{
-		conn?.release();
-	}
-});
-*/
 interface GetReportsQuery{
 	status:string|null
 }
 app.get("/reports",async(req:Request<{},{},{},GetReportsQuery>,res:Response)=>{
 	let{status}=req.query;
-	const requestedBy=req.session?.officerId;
+	const authHeader=req.headers.authorization;
+	let requestedBy=req.session?.officerId;
 	console.log(`[${getDateStr()}] GET /reports requestedBy=${requestedBy},status=${status}`);
 	if(requestedBy==null){
-		res.json({code:-1});
-		return;
+		requestedBy=authByHeader(authHeader||null);
+		if(requestedBy<0){
+			res.json({code:-1});
+			return;
+		}else if(requestedBy==null){
+			res.json({code:-2});
+			return;
+		}
 	}
 	let conn;
 	try{
