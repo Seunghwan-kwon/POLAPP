@@ -9,6 +9,7 @@ import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
 import PendingMessage from"./PendingMessage.js";
 import*as http from"node:http";
+import*as fs from"node:fs";
 //import*as readline from"node:readline";
 import{getDateStr}from"./Utils.js";
 declare module"http"{
@@ -23,6 +24,7 @@ declare module"express-session"{
 }
 const app:Application=express();
 let startTime=new Date();
+let buildTime=new Date();
 app.set("trust proxy",1);
 app.use(express.static("public"));
 app.use(express.json());
@@ -71,8 +73,8 @@ interface LoginRequestBody{
 	officerId:string,
 	matchingCode:string
 }
-app.get("/startTime",(req:Request,res:Response)=>{
-	res.json({startTimeStr:getDateStr(startTime)});
+app.get("/info",(req:Request,res:Response)=>{
+	res.json({startTime:getDateStr(startTime),buildTime:getDateStr(buildTime)});
 });
 app.post("/login",async(req:Request<{},{},LoginRequestBody>,res:Response)=>{
 	const{officerId,matchingCode}=req.body;
@@ -404,45 +406,63 @@ const port=getPortPrefix()+80;
 const appServer=new AppServer();
 console.log("port="+port);
 io.on("connection",(socket:Socket)=>{
+	const forwarded=socket.handshake.headers["x-forwarded-for"];
+	let ipAddress:string;
+	if(forwarded){
+		const ipList=Array.isArray(forwarded)?forwarded[0]:forwarded;
+		ipAddress=ipList.split(",")[0].trim();
+	}else{
+		ipAddress=socket.handshake.address;
+	}
 	const session=socket.request.session;
-	console.log(`[${getDateStr()}] Connected`);
+	console.log(`[${getDateStr()}] [io.on connection] socket.id=${socket.id},ip=${ipAddress}`);
 	let officer:Officer|null=null;
 	socket.on("join",async({officerId,role})=>{
-		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},role=${role}`);
 		officer=await appServer.setOfficerJoined(officerId,role,socket);
 		if(officer==null){
-			console.log(`[${getDateStr()}] socket.on join Failed. officerId=${officerId},role=${role}`);
+			console.log(`[${getDateStr()}] [socket.on join]  officerId=${officerId},role=${role},officer=null Rejected.`);
 		}
+		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},role=${role},socket.id=${socket.id} Accepted.`);
 	});
 	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
 		if(officer==null){
-			console.log(`[socket.on sendMyLocation] officer=null`);
+			console.log(`[${getDateStr()}] [socket.on sendMyLocation] socket.id=${socket.id},officer=null Rejected.`);
 			socket.disconnect();
 			return;
 		}
 		if(officer.region==null){
+			console.log(`[${getDateStr()}] [socket.on sendMyLocation] socket.id=${socket.id},officer.code=${officer.code},officer.region=null Rejected.`);
 			return;
 		}
+		//console.log(`[${getDateStr()}] [socket.on sendMyLocation] socket.id=${socket.id},officer.code=${officer.code},region=${officer.region.code}`);
 		officer.setLocation(latitude,longitude);
 		appServer.setOfficerLocationUpdated(officer);
 	});
 	socket.on("sendRadioMessage",async({officerId,region,message,timestamp})=>{
 		if(officer==null){
-			console.log(`[socket.on sendRadioMessage] officer=null`);
+			console.log(`[${getDateStr()}] [socket.on sendRadioMessage] socket.id=${socket.id},officer=null Rejected.`);
 			socket.disconnect();
 			return;
 		}
+		console.log(`[${getDateStr()}] [socket.on sendRadioMessage] socket.id=${socket.id},officer.code=${officer.code} Accepted.`);
 		await appServer.pushPendingMessage(officer,region,message,timestamp);
 	});
 	socket.on("disconnect",(reason:string)=>{
-		console.log(`[${getDateStr()}] [socket.on disconnect]`);
 		if(officer==null){
+			console.log(`[${getDateStr()}] [socket.on disconnect] socket.id=${socket.id},officer=null`);
 			return;
 		}
+		console.log(`[${getDateStr()}] [socket.on disconnect] socket.id=${socket.id},officer.code=${officer.code} Accepted`);
 		officer.removeSocket(socket);
 	});
 });
+function getBuildTime(){
+	const stats=fs.statSync(__filename);
+	const createdDate=stats.mtime;
+	return createdDate;
+}
 httpServer.listen(port,()=>{
 	startTime=new Date();
+	buildTime=getBuildTime();
 	console.log(`Listening on port=${port}`);
 });

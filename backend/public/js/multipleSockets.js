@@ -16,17 +16,25 @@ function createSocket(officerCode,regionCode,roleCode){
 	});
 	socket.emit("join",{
 		officerId:officerCode,
-		region:regionCode,
 		role:roleCode
 	});
 	return instance;
 }
-const instance0=createSocket("P-1000","SEOUL_NOWON","NONE");
-const instance1=createSocket("P-1001","SEOUL_NOWON","NONE");
-const instance2=createSocket("ADMIN-001","DEFAULT","ADMIN");
+let instance;
+//const instance1=createSocket("P-1001","SEOUL_NOWON","NONE");
+//const instance2=createSocket("ADMIN-001","DEFAULT","ADMIN");
+/*
 setTimeout(()=>{
-	instance0.close();
+	instance.close();
 	setTimeout(()=>{
 		instance1.close();
 	},500);
 },500);
+*/
+(async()=>{
+for(let i=0;i<4;++i){
+	instance=createSocket("P-1000","NONE");
+	await new Promise((resolve)=>setTimeout(resolve,100));
+	instance.close();
+}
+})();
