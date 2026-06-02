@@ -13,6 +13,7 @@ class MapBottomPanel extends StatelessWidget {
     required this.scrollController,
     required this.officerProfile,
     required this.status,
+    required this.onNavigateToReport,
     this.selectedFacility,
     this.selectedReport,
   });
@@ -20,6 +21,7 @@ class MapBottomPanel extends StatelessWidget {
   final ScrollController scrollController;
   final OfficerProfile officerProfile;
   final SafetyStatus status;
+  final ValueChanged<Report> onNavigateToReport;
   final PoliceFacility? selectedFacility;
   final Report? selectedReport;
 
@@ -157,7 +159,10 @@ class MapBottomPanel extends StatelessWidget {
                   border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
                 child: selectedReport != null
-                    ? _SelectedReportCard(report: selectedReport!)
+                    ? _SelectedReportCard(
+                        report: selectedReport!,
+                        onNavigate: onNavigateToReport,
+                      )
                     : selectedFacility == null
                     ? const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -238,9 +243,13 @@ class MapBottomPanel extends StatelessWidget {
 }
 
 class _SelectedReportCard extends StatelessWidget {
-  const _SelectedReportCard({required this.report});
+  const _SelectedReportCard({
+    required this.report,
+    required this.onNavigate,
+  });
 
   final Report report;
+  final ValueChanged<Report> onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -288,6 +297,19 @@ class _SelectedReportCard extends StatelessWidget {
         _ReportInfoRow(label: '접수 시각', value: _formatDateTime(report.createdAt)),
         _ReportInfoRow(label: '위도', value: report.lat.toStringAsFixed(6)),
         _ReportInfoRow(label: '경도', value: report.lng.toStringAsFixed(6)),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => onNavigate(report),
+            icon: const Icon(Icons.navigation),
+            label: const Text('16(출발)'),
+          ),
+        ),
       ],
     );
   }

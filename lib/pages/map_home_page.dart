@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/officer_profile.dart';
 import '../models/police_facility.dart';
@@ -580,6 +581,58 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
+  Future<void> _onNavigateToReport(Report report) async {
+    if (!_isValidNavigationTarget(report)) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('사건 위치 좌표가 올바르지 않습니다.'),
+          ),
+        );
+      return;
+    }
+
+    final navigationUri = Uri(
+      scheme: 'nmap',
+      host: 'navigation',
+      queryParameters: {
+        'dlat': report.lat.toString(),
+        'dlng': report.lng.toString(),
+        'dname': report.title,
+        'appname': 'com.polapp.pol_app',
+      },
+    );
+
+    debugPrint('[Navigation] 네이버 지도 앱 호출: $navigationUri');
+
+    try {
+      final launched = await launchUrl(
+        navigationUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched || !mounted) return;
+    } catch (error) {
+      debugPrint('[Navigation] 네이버 지도 앱 실행 실패: $error');
+      if (!mounted) return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('네이버 지도 앱을 실행할 수 없습니다. 설치 여부를 확인해 주세요.'),
+        ),
+      );
+  }
+
+  bool _isValidNavigationTarget(Report report) {
+    return report.lat >= 31.43 &&
+        report.lat <= 44.35 &&
+        report.lng >= 122.37 &&
+        report.lng <= 132.00;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isLandscape =
@@ -769,6 +822,7 @@ class _MapHomePageState extends State<MapHomePage> {
                   status: _safetyStatus,
                   selectedFacility: _selectedFacility,
                   selectedReport: _selectedReport,
+                  onNavigateToReport: _onNavigateToReport,
                 );
               },
             ),
