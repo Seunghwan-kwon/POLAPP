@@ -1,6 +1,7 @@
 import 'dart:async'; // Timer 기능을 사용하기 위해 추가
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kIsWeb을 사용하기 위해 추가
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:web/web.dart' as web; // 브라우저의 HTML DOM(div 등)을 조작하기 위해 추가
@@ -34,6 +35,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final List<js.JSAny> _mapEventHandlers = [];
   bool _isCreateReportDialogOpen = false; // 사건 입력창이 이미 열려 있는지 확인하여 중복 표시를 방지
   bool _isWaitingForReportLocation = false; // 사건 접수 확인 후, 지도에서 사건 위치 클릭을 기다리는 상태
+  String _myOfficerId = ''; // 내 사번 저장용
 
   // 확인창 버튼 클릭이 지도 클릭으로 이어지는 것을 막기 위해 일정 시간 클릭 무시
   DateTime? _lastMapDragEndedAt;
@@ -47,6 +49,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   void initState() {
     super.initState();
+    _loadUserInfo();
     
     // 현재 환경이 웹일 경우에만 HTML 요소를 생성하고 등록
     if (kIsWeb) {
@@ -65,6 +68,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         return div;
       });
     }
+  }
+
+  Future<void> _loadUserInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _myOfficerId = prefs.getString('officerId') ?? 'UNKNOWN_ADMIN';
+    });
   }
 
   // launch.json의 환경 변수를 읽어 HTML에 네이버 지도 스크립트를 동적으로 삽입
@@ -259,8 +269,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       // role이 'ADMIN'일 경우, 서버는 특정 관할 구역에 국한되지 않고 모든 경찰관의 위치를 브로드캐스트
       _socket?.emit('join', {
         'officerId': 'ADMIN-001',
-        'region': 'ALL', // ADMIN 권한이므로 서버에서 무시되지만 프로토콜 규격을 위해 전달
-        'role': 'ADMIN'
       });
       debugPrint('[Debug] Join 이벤트 전송 완료 (Role: ADMIN)');
     });
@@ -960,7 +968,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     if (_socket != null && _socket!.connected) {
                       // 선택된 region 값('ALL' 또는 특정 지역명)을 그대로 서버에 전송
                       _socket!.emit('sendRadioMessage', {
-                        'officerId': 'ADMIN-001',
+                        'officerId': _myOfficerId,
                         'region': selectedRegion, 
                         'message': text,
                         'timestamp': currentTimestamp,

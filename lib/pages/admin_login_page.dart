@@ -58,11 +58,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         final dynamic data = jsonDecode(response.body);
         final String validatedId = data['officerId'] ?? adminId;
         final String token = data['token'] ?? 'web-temp-token';
+        final String role = data['role'] ?? 'ADMIN';
 
         // 웹 브라우저 로컬 스토리지에 인증 정보 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('officerId', validatedId);
         await prefs.setString('authToken', token);
+        await prefs.setString('officerRole', role);
 
         debugPrint('[Web Auth] 로그인 성공: $validatedId');
 

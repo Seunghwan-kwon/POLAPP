@@ -69,6 +69,8 @@ class _LoginPageState extends State<LoginPage> {
         final String name = data['name'] ?? '이름 미상';
         final String rank = data['rank'] ?? '계급 미상';
         final String region = data['region'] ?? 'UNKNOWN_REGION';
+        final String affiliation = data['affiliation'] ?? '소속 미상';
+        final String role = data['role'] ?? 'USER';
 
         // 휴대폰 내부 금고(SharedPreferences)에 인증 정보를 안전하게 저장
         final prefs = await SharedPreferences.getInstance();
@@ -77,6 +79,8 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('officerName', name);
         await prefs.setString('officerRank', rank);
         await prefs.setString('officerRegion', region);
+        await prefs.setString('officerAffiliation', affiliation);
+        await prefs.setString('officerRole', role);
 
         debugPrint('[Auth] 로그인 성공! 사번: $validatedId, $rank $name');
 
