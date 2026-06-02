@@ -4,6 +4,7 @@ import DBConnection from"./DBConnection.js";
 import PendingMessage from"./PendingMessage.js";
 import Region from"./Region.js";
 import Role from"./Role.js";
+import{getDateStr}from"./Utils.js";
 enum RemoveResultCode{
 	Success=0,
 	Exception1=-1,
@@ -185,10 +186,12 @@ export default class Officer{
 		}
 	}
 	isOffline():boolean{
+		console.log(`[${getDateStr()}] [isOffline] officer.code=${this.code} sockets.size=${this.sockets.size}`);
 		return this.sockets.size==0;
 	}
 	addSocket(socket:Socket):void{
 		this.sockets.set(socket.id,socket);
+		console.log(`[${getDateStr()}] [addSocket] officer.code=${this.code} sockets.size=${this.sockets.size},socket.id=${socket.id}`);
 	}
 	removeSocket(socket:Socket):void{
 		this.sockets.delete(socket.id);
@@ -196,11 +199,9 @@ export default class Officer{
 			this.appServer.setOfficerOffline(this);
 			if(this.region){
 				this.region.removeOfficer(this);
-				this.region=null;
 			}
 			if(this.role){
 				this.role.removeOfficer(this);
-				this.role=null;
 			}
 		}
 	}
@@ -281,15 +282,16 @@ export default class Officer{
 		}
 		role.addOfficer(this);
 		this.role=role;
-		console.log(`[Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
+		console.log(`[${getDateStr()}] [Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
 		return 0;
 	}
 	setRegion():number{
 		if(this.region==null){
+			console.log(`[${getDateStr()}] [Officer.setRegion] this.region=null`);
 			return-1;
 		}
 		this.region.addOfficer(this);
-		console.log(`[Officer.setRegion] officer.code=${this.code} region.code=${this.region.code}`);
+		console.log(`[${getDateStr()}] [Officer.setRegion] officer.code=${this.code} region.code=${this.region.code}`);
 		return 0;
 	}
 	setLocation(x:number,y:number):void{

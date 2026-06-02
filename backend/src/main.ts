@@ -437,7 +437,6 @@ io.on("connection",(socket:Socket)=>{
 	socket.on("disconnect",(reason:string)=>{
 		console.log(`[${getDateStr()}] [socket.on disconnect]`);
 		if(officer==null){
-			socket.disconnect();
 			return;
 		}
 		officer.removeSocket(socket);

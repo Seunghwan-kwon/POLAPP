@@ -9,14 +9,6 @@ class Case{
 		this.name=String(id);
 	}
 }
-const caseMap=new Map();
-function setCaseComplete(caseId){
-	const caseObject=caseMap.get(caseId);
-	if(caseObject==null){
-		return;
-	}
-	caseObject.setComplete();
-}
 class UIUpdater{
 	constructor(){
 		this.nextFunctionId=1;
@@ -58,12 +50,6 @@ registerUIUpdater("joined",function([joined]){
 		joinButton.show();
 	}
 });
-registerUIUpdater("caseComplete",function([caseId]){
-	caseList.removeData(caseId);
-});
-registerUIUpdater("caseAssigned",function([caseId]){
-	caseList.scroll(0);
-});
 registerUIUpdater("position",function([officerId]){
 	const policeList=policeMap.values();
 	ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -81,14 +67,6 @@ socket.on("disconnect",(reason)=>{
 });
 socket.on("removeColleagueLocation",({officerId})=>{
 	alert(`removeColleagueLocation officerId=${officerId}`);
-});
-socket.on("caseComplete",(caseId)=>{
-	setCaseComplete(caseId);
-	updateUI("caseComplete",[caseId]);
-});
-socket.on("caseAssigned",(caseId)=>{
-	addCase(caseId);
-	updateUI("caseAssigned",[caseId]);
 });
 const policeMap=new Map();
 function addPolice(policeId){
@@ -148,6 +126,7 @@ function main(){
 			e.type="text";
 		}
 		e.appendChild(codeBox);
+		/*
 		const regionBox=document.createElement("input");
 		{
 			const e=regionBox;
@@ -155,6 +134,7 @@ function main(){
 			e.type="text";
 		}
 		e.appendChild(regionBox);
+		*/
 		const roleBox=document.createElement("input");
 		{
 			const e=roleBox;
@@ -180,7 +160,6 @@ function main(){
 			e.addEventListener("click",(e)=>{
 				socket.emit("join",{
 					officerId:codeBox.value,
-					region:regionBox.value,
 					role:roleBox.value
 				});
 				setJoined(true);
@@ -207,7 +186,6 @@ function main(){
 				const dt=t-lastPositionSendTime;
 				if(dt>MAX_DELAY-1){
 					socket.emit("sendMyLocation",{
-						//officerId:myOfficerId,
 						latitude:positionX,
 						longitude:positionY
 					});
@@ -215,7 +193,6 @@ function main(){
 				}else{
 					sendPositionTimeout=setTimeout(function(){
 						socket.emit("sendMyLocation",{
-							//officerId:myOfficerId,
 							latitude:positionX,
 							longitude:positionY
 						});

@@ -137,6 +137,7 @@ export default class AppServer{
 		}
 	}
 	async setOfficerOffline(officer:Officer):Promise<void>{
+		console.log(`[${getDateStr()}] [setOfficerOffline] officer.code=${officer.code}`);
 		this.officers.delete(officer.id);
 		await this.broadcastOfficerOffline(officer);
 	}

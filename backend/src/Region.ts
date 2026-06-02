@@ -1,5 +1,6 @@
 import Officer from"./Officer.js";
 import DBConnection from"./DBConnection.js";
+import{getDateStr}from"./Utils.js";
 export default class Region{
 	id:number;
 	code:string;
@@ -11,7 +12,7 @@ export default class Region{
 	}
 	addOfficer(officer:Officer):void{
 		this.officers.set(officer.id,officer);
-		console.log(`[addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
+		console.log(`[${getDateStr()}] [Region.addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
 	}
 	removeOfficer(officer:Officer):void{
 		this.officers.delete(officer.id);
