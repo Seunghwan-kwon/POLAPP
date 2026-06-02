@@ -112,6 +112,7 @@ class _MapHomePageState extends State<MapHomePage> {
   @override
   void dispose() {
     _positionStream?.cancel();  // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
+    _socket?.disconnect();
     _socket?.dispose();// 화면 종료 시 통신도 종료
     _policeMarkerService.dispose();
     _mobileReportService.close();
@@ -126,24 +127,26 @@ class _MapHomePageState extends State<MapHomePage> {
     _socket = io.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
+      'forceNew': true,
     });
 
     // 서버 연결 성공 시 내가 접속했다는 사실을 서버에 알림
     _socket?.onConnect((_) {
       debugPrint('WebSocket connected');
+      
       _socket?.emit('join', {
         'officerId': _myOfficerId,
-        'region': _myRegion
       });
-    });
 
-    if (_myLocationMarker != null) {
+      if (_myLocationMarker != null) {
         _socket!.emit('sendMyLocation', {
           'officerId': _myOfficerId,
           'latitude': _myLocationMarker!.position.latitude,
           'longitude': _myLocationMarker!.position.longitude,
         });
+        debugPrint('[Debug] 초기 위치 1회 강제 전송 완료');
       }
+    });
 
     // 서버 연결 실패 시 에러 로그 출력
     _socket?.onConnectError(
