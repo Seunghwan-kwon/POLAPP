@@ -203,6 +203,7 @@ export default class Officer{
 			if(this.role){
 				this.role.removeOfficer(this);
 			}
+			this.initialLocationUpdate=true;
 		}
 	}
 	emit(name:string,arg:any):number{
@@ -229,7 +230,8 @@ export default class Officer{
 		if(region==null){
 			return-1;
 		}
-		const payload=peer.initialLocationUpdate?{
+		const payload=/*peer.initialLocationUpdate?*/
+		{
 			officerId:peer.code,
 			region:region.code,
 			latitude:peer.x,
@@ -237,12 +239,13 @@ export default class Officer{
 			name:peer.name,
 			rank:peer.rank,
 			affiliation:peer.affiliation
-		}:{
+		};
+		/*:{
 			officerId:peer.code,
 			region:region.code,
 			latitude:peer.x,
 			longitude:peer.y
-		};
+		};*/
 		let result=0;
 		for(const socket of this.sockets.values()){
 			socket.emit("updateColleagueLocation",payload);
