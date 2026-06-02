@@ -4,7 +4,12 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import '../models/report.dart';
 
 class ReportMarkerService {
+  static const NOverlayImage _reportIcon = NOverlayImage.fromAssetImage(
+    'assets/icons/siren_icon.png',
+  );
+
   final Map<String, NMarker> _markers = {};
+  double _currentMarkerSize = _markerSizeForZoom(15);
 
   Future<void> replaceReports({
     required NaverMapController controller,
@@ -32,7 +37,8 @@ class ReportMarkerService {
     final marker = NMarker(
       id: 'report-${report.id}',
       position: NLatLng(report.lat, report.lng),
-      iconTintColor: _markerColor(report.severity),
+      icon: _reportIcon,
+      size: Size.square(_currentMarkerSize),
       caption: NOverlayCaption(text: report.title),
     );
     marker.setOnTapListener((overlay) {
@@ -64,16 +70,20 @@ class ReportMarkerService {
     }
   }
 
-  static Color _markerColor(String severity) {
-    switch (severity.toUpperCase()) {
-      case 'CRITICAL':
-        return Colors.red;
-      case 'HIGH':
-        return Colors.deepOrange;
-      case 'MEDIUM':
-        return Colors.amber;
-      default:
-        return Colors.green;
+  void updateMarkerSizes(double zoom) {
+    final markerSize = _markerSizeForZoom(zoom);
+    if (markerSize == _currentMarkerSize) return;
+
+    _currentMarkerSize = markerSize;
+    for (final marker in _markers.values) {
+      marker.setSize(Size.square(markerSize));
     }
+  }
+
+  static double _markerSizeForZoom(double zoom) {
+    if (zoom <= 12) return 24;
+    if (zoom <= 14) return 32;
+    if (zoom <= 16) return 42;
+    return 52;
   }
 }

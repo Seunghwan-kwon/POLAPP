@@ -194,10 +194,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       _handleMapClick(lat, lng);
     }).toJS;
 
+    final zoomChangedHandler = (() {
+      _updateReportMarkerSizes(maps, mapInstance);
+    }).toJS;
+
     _mapEventHandlers.addAll([
       dragStartHandler,
       dragEndHandler,
       clickHandler,
+      zoomChangedHandler,
     ]);
 
     event.callMethod(
@@ -219,6 +224,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       mapInstance,
       'click'.toJS,
       clickHandler,
+    );
+
+    event.callMethod(
+      'addListener'.toJS,
+      mapInstance,
+      'zoom_changed'.toJS,
+      zoomChangedHandler,
     );
 
     debugPrint('[Debug] 지도 이벤트 리스너 등록 완료');
@@ -483,6 +495,38 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     marker.callMethod('setMap'.toJS, null);
   }
 
+  js.JSAny _createReportMarkerIcon(js.JSObject maps, js.JSObject adminMap) {
+    final zoom = (adminMap.callMethod('getZoom'.toJS) as js.JSNumber).toDartDouble;
+    final size = _reportMarkerSizeForZoom(zoom);
+    final markerSize = maps.callMethod('Size'.toJS, size.toJS, size.toJS);
+    final markerAnchor = maps.callMethod(
+      'Point'.toJS,
+      (size / 2).toJS,
+      size.toJS,
+    );
+
+    return {
+      'url': 'assets/assets/icons/siren_icon.png',
+      'scaledSize': markerSize,
+      'anchor': markerAnchor,
+    }.jsify() as js.JSAny;
+  }
+
+  double _reportMarkerSizeForZoom(double zoom) {
+    if (zoom <= 12) return 20;
+    if (zoom <= 14) return 26;
+    if (zoom <= 16) return 32;
+    return 40;
+  }
+
+  void _updateReportMarkerSizes(js.JSObject maps, js.JSObject adminMap) {
+    final markerIcon = _createReportMarkerIcon(maps, adminMap);
+
+    for (final marker in _reportMarkers.values) {
+      marker.callMethod('setIcon'.toJS, markerIcon);
+    }
+  }
+
   // 서버에서 받은 사건 데이터를 기준으로 지도 위에 JS 마커를 생성한다.
   void _createReportMarkerJS(Report report) {
     final naver = js.globalContext['naver'] as js.JSObject?;
@@ -505,6 +549,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       'position': position,
       'map': adminMap,
       'title': report.title,
+      'icon': _createReportMarkerIcon(maps, adminMap),
     }.jsify();
 
     final markerConstructor = maps['Marker'] as js.JSFunction;

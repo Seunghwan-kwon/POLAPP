@@ -556,6 +556,15 @@ class _MapHomePageState extends State<MapHomePage> {
     }
   }
 
+  void _updateReportMarkerSizes() {
+    final controller = _mapController;
+    if (controller == null) return;
+
+    _reportMarkerService.updateMarkerSizes(
+      controller.nowCameraPosition.zoom,
+    );
+  }
+
   void _onPoliceFacilityTap(PoliceFacility facility) {
     setState(() {
       _selectedFacility = facility;
@@ -661,6 +670,7 @@ class _MapHomePageState extends State<MapHomePage> {
                   _isMapLoaded = true;
                 });
               },
+              onCameraIdle: _updateReportMarkerSizes,
             ),
           ),
           // 2. 좌측 상단: 현재 맵 로딩 상태 및 출동 상태 표시
