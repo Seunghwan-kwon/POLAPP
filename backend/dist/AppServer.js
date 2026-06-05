@@ -117,20 +117,25 @@ class AppServer {
                         peer.syncPeerLocation(officer);
                     }
                 }
+                if (officer.initialLocationUpdate) {
+                    officer.initialLocationUpdate = false;
+                }
             }
             this.updatedOfficers.clear();
         });
     }
-    setOfficerJoined(officerCode, regionCode, roleCode, socket) {
+    setOfficerJoined(officerCode, roleCode, socket) {
         return __awaiter(this, void 0, void 0, function* () {
             let conn;
             try {
                 conn = yield getDBConnection();
                 const officer = yield Officer_js_1.default.findByCode(conn, officerCode, this);
                 if (officer == null) {
-                    console.log(`[setOfficerJoined] officer=null`);
+                    console.log(`[${(0, Utils_js_1.getDateStr)()}] [setOfficerJoined] findByCode returned null officerCode=${officerCode}`);
                     return null;
                 }
+                officer.setSocket(socket);
+                officer.setRegion();
                 const origOfficers = this.officers.values();
                 for (const origOfficer of origOfficers) {
                     if (origOfficer == officer) {
@@ -138,19 +143,12 @@ class AppServer {
                     }
                     officer.syncPeerLocation(origOfficer);
                 }
-                if (regionCode != null) {
-                    const region = yield Region_js_1.default.findByCode(regionCode, conn);
-                    if (region != null) {
-                        officer.setRegion(region);
-                    }
-                }
                 if (roleCode != null) {
                     const role = yield Role_js_1.default.findByCode(roleCode, conn);
                     if (role != null) {
                         officer.setRole(role);
                     }
                 }
-                officer.addSocket(socket);
                 this.officers.set(officer.id, officer);
                 return officer;
             }
@@ -166,6 +164,7 @@ class AppServer {
     }
     setOfficerOffline(officer) {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [setOfficerOffline] officer.code=${officer.code}`);
             this.officers.delete(officer.id);
             yield this.broadcastOfficerOffline(officer);
         });
@@ -232,6 +231,11 @@ class AppServer {
                 }
             }
         });
+    }
+    broadcast(name, arg) {
+        for (const officer of this.officers.values()) {
+            officer.emit(name, arg);
+        }
     }
 }
 exports.default = AppServer;

@@ -54,7 +54,7 @@ export default class Officer{
 	affiliation:string;
 	region:Region|null;
 	role:Role|null;
-	sockets:Map<string,Socket>
+	socket:Socket|null;
 	initialLocationUpdate:boolean;
 	appServer:AppServer;
 	constructor(
@@ -72,7 +72,7 @@ export default class Officer{
 		this.name=name;
 		this.rank=rank;
 		this.affiliation=affiliation;
-		this.sockets=new Map<string,Socket>();
+		this.socket=null;
 		this.initialLocationUpdate=true;
 		this.appServer=appServer;
 	}
@@ -185,50 +185,52 @@ export default class Officer{
 			);
 		}
 	}
-	isOffline():boolean{
-		console.log(`[${getDateStr()}] [isOffline] officer.code=${this.code} sockets.size=${this.sockets.size}`);
-		return this.sockets.size==0;
-	}
-	addSocket(socket:Socket):void{
-		this.sockets.set(socket.id,socket);
-		console.log(`[${getDateStr()}] [addSocket] officer.code=${this.code} sockets.size=${this.sockets.size},socket.id=${socket.id}`);
+	setSocket(socket:Socket):void{
+		if(this.socket){
+			this.socket.disconnect();
+			this.socket=null;
+		}
+		this.socket=socket;
+		console.log(`[${getDateStr()}] [setSocket] officer.code=${this.code} socket.id=${socket.id}`);
 	}
 	removeSocket(socket:Socket):void{
-		this.sockets.delete(socket.id);
-		if(this.isOffline()){
-			this.appServer.setOfficerOffline(this);
-			if(this.region){
-				this.region.removeOfficer(this);
-			}
-			if(this.role){
-				this.role.removeOfficer(this);
-			}
-			this.initialLocationUpdate=true;
+		if(this.socket!=socket){
+			return;
 		}
+		this.socket=null;
+		this.appServer.setOfficerOffline(this);
+		if(this.region){
+			this.region.removeOfficer(this);
+		}
+		if(this.role){
+			this.role.removeOfficer(this);
+		}
+		this.initialLocationUpdate=true;
 	}
 	emit(name:string,arg:any):number{
-		let result=0;
-		for(const socket of this.sockets.values()){
-			socket.emit(name,arg);
-			result++;
+		if(this.socket==null){
+			return 0;
 		}
-		return result;
+		this.socket.emit(name,arg);
+		return 1;
 	}
 	notifyPeerOffline(peer:Officer):number{
 		const payload={
 			officerId:peer.code,
 		};
-		let result=0;
-		for(const socket of this.sockets.values()){
-			socket.emit("removeColleagueLocation",payload);
-			result++;
+		if(this.socket==null){
+			return 0;
 		}
-		return result;
+		this.socket.emit("removeColleagueLocation",payload);
+		return 1;
 	}
 	syncPeerLocation(peer:Officer):number{
 		const region=peer.region;
 		if(region==null){
 			return-1;
+		}
+		if(this.socket==null){
+			return-2;
 		}
 		const payload=/*peer.initialLocationUpdate?*/
 		{
@@ -246,14 +248,13 @@ export default class Officer{
 			latitude:peer.x,
 			longitude:peer.y
 		};*/
-		let result=0;
-		for(const socket of this.sockets.values()){
-			socket.emit("updateColleagueLocation",payload);
-			result++;
-		}
-		return result;
+		this.socket.emit("updateColleagueLocation",payload);
+		return 1;
 	}
 	syncPeerMessage(message:PendingMessage):number{
+		if(this.socket==null){
+			return-1;
+		}
 		const peer=message.sender;
 		const region=message.region;
 		let regionCode;
@@ -268,12 +269,8 @@ export default class Officer{
 			message:message.content,
 			timestamp:message.timestamp
 		};
-		let result=0;
-		for(const socket of this.sockets.values()){
-			socket.emit("receiveRadioMessage",payload);
-			result++;
-		}
-		return result;
+		this.socket.emit("receiveRadioMessage",payload);
+		return 1;
 	}
 	setRole(role:Role):number{
 		if(this.role!=null){

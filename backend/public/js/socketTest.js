@@ -2,7 +2,7 @@
 window.addEventListener("error",(e)=>{
 	alert(e);
 });
-const socket=io("/");
+let socket=initSocket();
 class Case{
 	constructor(id){
 		this.id=id;
@@ -61,13 +61,22 @@ registerUIUpdater("position",function([officerId]){
 		ctx.strokeText(police.officerId,police.x,police.y);
 	}
 });
-socket.on("disconnect",(reason)=>{
-	console.log(`Diconnected reason=${reason}`);
-	setJoined(false);
-});
-socket.on("removeColleagueLocation",({officerId})=>{
-	alert(`removeColleagueLocation officerId=${officerId}`);
-});
+function initSocket(){
+	const _socket=io("/");
+	_socket.on("disconnect",(reason)=>{
+		console.log(`Diconnected reason=${reason}`);
+		setJoined(false);
+		socket=initSocket();
+	});
+	_socket.on("removeColleagueLocation",({officerId})=>{
+		alert(`removeColleagueLocation officerId=${officerId}`);
+	});
+	_socket.on("updateColleagueLocation",({officerId,latitude,longitude})=>{
+		updatePoliceLocation(officerId,latitude,longitude);
+		updateUI("position",[officerId]);
+	});
+	return _socket;
+}
 const policeMap=new Map();
 function addPolice(policeId){
 	if(policeMap.has(policeId)){
@@ -76,10 +85,6 @@ function addPolice(policeId){
 	const police=new Police(policeId);
 	policeMap.set(policeId,police);
 }
-socket.on("policeAssigned",(policeId)=>{
-	addPolice(policeId);
-	updateUI("policeAssigned",[policeId]);
-});
 class Police{
 	constructor(officerId){
 		this.x=0;
@@ -101,11 +106,6 @@ function updatePoliceLocation(officerId,x,y){
 }
 let ctx;
 let canvas;
-socket.on("updateColleagueLocation",({officerId,latitude,longitude})=>{
-	updatePoliceLocation(officerId,latitude,longitude);
-	updateUI("position",[officerId]);
-});
-//let myOfficerId=null;
 let joined=false;
 function setJoined(b){
 	joined=b;
@@ -126,15 +126,6 @@ function main(){
 			e.type="text";
 		}
 		e.appendChild(codeBox);
-		/*
-		const regionBox=document.createElement("input");
-		{
-			const e=regionBox;
-			e.value="SEOUL_NOWON";
-			e.type="text";
-		}
-		e.appendChild(regionBox);
-		*/
 		const roleBox=document.createElement("input");
 		{
 			const e=roleBox;
@@ -158,6 +149,7 @@ function main(){
 				}
 			};
 			e.addEventListener("click",(e)=>{
+				console.log("socket.emit join");
 				socket.emit("join",{
 					officerId:codeBox.value,
 					role:roleBox.value

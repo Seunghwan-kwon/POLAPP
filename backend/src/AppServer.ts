@@ -111,7 +111,7 @@ export default class AppServer{
 				console.log(`[${getDateStr()}] [setOfficerJoined] findByCode returned null officerCode=${officerCode}`);
 				return null;
 			}
-			officer.addSocket(socket);
+			officer.setSocket(socket);
 			officer.setRegion();
 			const origOfficers=this.officers.values();
 			for(const origOfficer of origOfficers){

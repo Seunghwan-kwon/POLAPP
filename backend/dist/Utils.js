@@ -1,8 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDateStr = getDateStr;
-function getDateStr() {
-    const date = new Date();
+function getDateStr(date = new Date()) {
     const y = date.getFullYear();
     const M = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');

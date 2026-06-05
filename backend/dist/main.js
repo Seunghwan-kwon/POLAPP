@@ -49,13 +49,18 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const socket_io_1 = require("socket.io");
 const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
-const Case_js_1 = __importDefault(require("./Case.js"));
-const User_js_1 = __importDefault(require("./User.js"));
+const Report_js_1 = __importDefault(require("./Report.js"));
+const Region_js_1 = __importDefault(require("./Region.js"));
 const Officer_js_1 = __importDefault(require("./Officer.js"));
 const AppServer_js_1 = __importStar(require("./AppServer.js"));
 const http = __importStar(require("node:http"));
+const fs = __importStar(require("node:fs"));
+//import*as readline from"node:readline";
 const Utils_js_1 = require("./Utils.js");
 const app = (0, express_1.default)();
+let startTime = new Date();
+let buildTime = new Date();
+app.set("trust proxy", 1);
 app.use(express_1.default.static("public"));
 app.use(express_1.default.json());
 function getPortPrefix() {
@@ -72,8 +77,9 @@ app.use((req, res, next) => {
     //if(origin&&allowedOrigins.includes(origin)){
     res.header("Access-Control-Allow-Origin", origin);
     //}
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     if (req.method === "OPTIONS") {
         return res.sendStatus(200);
     }
@@ -85,7 +91,8 @@ const sessionMiddleware = (0, express_session_1.default)({
     saveUninitialized: false,
     cookie: {
         httpOnly: true,
-        secure: false,
+        secure: true,
+        sameSite: "none",
         maxAge: 1000 * 3600
     }
 });
@@ -93,14 +100,21 @@ app.use(sessionMiddleware);
 const httpServer = http.createServer(app);
 const io = new socket_io_1.Server(httpServer);
 io.engine.use(sessionMiddleware);
-class Admin {
-    static create(userId) {
-        return __awaiter(this, void 0, void 0, function* () {
-        });
-    }
-}
+app.get("/info", (req, res) => {
+    res.json({ startTime: (0, Utils_js_1.getDateStr)(startTime), buildTime: (0, Utils_js_1.getDateStr)(buildTime) });
+});
 app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const { officerId, matchingCode } = req.body;
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] /login officerId=${officerId},matchingCode=${matchingCode}`);
+    if (officerId == null) {
+        res.json({ code: -1 });
+        return;
+    }
+    if (matchingCode == null) {
+        res.json({ code: -2 });
+        return;
+    }
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
@@ -118,11 +132,19 @@ app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             res.status(401).json(failPayload);
             return;
         }
-        const token = jsonwebtoken_1.default.sign({ officerId: officer.id }, process.env.jwtSecret || "0000", { expiresIn: "1h" });
+        const payload = {
+            officerId: officer.id
+        };
+        const token = jsonwebtoken_1.default.sign(payload, getJwtSecret(), { expiresIn: "1h" });
+        req.session.officerId = officer.id;
         res.status(200).json({
             status: "success",
             officerId: officer.code,
-            token: token
+            token: token,
+            name: officer.name,
+            rank: officer.rank,
+            region: (_a = officer.region) === null || _a === void 0 ? void 0 : _a.code,
+            affiliaton: officer.affiliation
         });
     }
     catch (e) {
@@ -136,187 +158,172 @@ app.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
-app.post("/case/assignOfficer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    const { caseId, officerId } = req.body;
-    const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
-    if (updatedBy == null) {
+/*
+interface CreateUserRequestBody{
+    email:string,
+    passwd:string,
+    name:string
+}
+app.post("/user",async(req:Request<{},{},CreateUserRequestBody>,res:Response)=>{
+    const{email,passwd,name}=req.body;
+    if(email==null||email.length==0){
         res.json({
-            code: -1
+            code:-1
+        });
+        return;
+    }
+    if(passwd==null||passwd.length==0){
+        res.json({code:-1});
+        return;
+    }
+    const createdBy=req.session?.officerId;
+    if(createdBy==null){
+        res.json({
+            code:-1
         });
         return;
     }
     let conn;
+    try{
+        conn=await getDBConnection();
+        const result=await User.create(conn,email,passwd,createdBy,name);
+        if(result.code<0){
+            res.json({code:-2});
+            return;
+        }
+        res.json({
+            code:0,
+            result:result
+        });
+    }catch(e){
+        console.error(e);
+        res.json({code:-2});
+    }finally{
+        conn?.release();
+    }
+});
+*/
+function getJwtSecret() {
+    return process.env.jwtSecret || "0000";
+}
+function authByHeader(authHeader) {
+    if (authHeader == null) {
+        return -1;
+    }
+    if (!authHeader.startsWith("Bearer ")) {
+        return -2;
+    }
+    const token = authHeader.split(" ")[1];
     try {
-        conn = yield (0, AppServer_js_1.getDBConnection)();
-        let _case = yield Case_js_1.default.getCached(caseId, conn);
-        if (_case == null) {
+        const decoded = jsonwebtoken_1.default.verify(token, getJwtSecret());
+        return decoded.officerId;
+    }
+    catch (e) {
+        console.error(e);
+        return -3;
+    }
+}
+app.get("/reports", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    let { status } = req.query;
+    const authHeader = req.headers.authorization;
+    let requestedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] GET /reports requestedBy=${requestedBy},status=${status}`);
+    let authType = -1;
+    if (requestedBy == null) {
+        requestedBy = authByHeader(authHeader || null);
+        if (requestedBy < 0) {
+            res.json({ code: -1 });
+            return;
+        }
+        else if (requestedBy == null) {
             res.json({ code: -2 });
             return;
         }
-        const result = yield _case.assignOfficer(officerId, updatedBy, conn);
-        res.json({
-            code: 0,
-            result: result
-        });
+        authType = 2;
     }
-    catch (e) {
-        console.error(e);
-        res.json({ code: -2 });
-    }
-    finally {
-        conn === null || conn === void 0 ? void 0 : conn.release();
-    }
-}));
-app.post("/case", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    const { name } = req.body;
-    if (name == null || name.length == 0) {
-        res.json({ code: -1 });
-        return;
-    }
-    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
-    if (createdBy == null) {
-        res.json({ code: -2 });
-        return;
+    else {
+        authType = 1;
     }
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
-        const _case = yield Case_js_1.default.create(name, createdBy, conn);
-        if (_case == null) {
-            res.json({ code: -3 });
-            return;
-        }
-        res.json({
-            code: 0,
-            caseId: _case.id
-        });
-    }
-    catch (e) {
-        console.error(e);
-        res.json({ code: -4 });
-    }
-    finally {
-        conn === null || conn === void 0 ? void 0 : conn.release();
-    }
-}));
-app.put("/case/:id/setComplete", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    const { id } = req.params;
-    const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
-    if (updatedBy == null) {
-        res.json({
-            code: -1
-        });
-        return;
-    }
-    let conn;
-    try {
-        conn = yield (0, AppServer_js_1.getDBConnection)();
-        const _case = yield Case_js_1.default.getCached(Number(id), conn);
-        if (_case == null) {
-            res.json({
-                code: -2
-            });
-            return;
-        }
-        const result = yield _case.setComplete(updatedBy, conn);
-        res.json({
-            code: 0,
-            result: result
-        });
-    }
-    catch (e) {
-        console.error(e);
-        res.json({
-            code: -2
-        });
-    }
-    finally {
-        conn === null || conn === void 0 ? void 0 : conn.release();
-    }
-}));
-app.post("/user", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
-    const { email, passwd, name } = req.body;
-    if (email == null || email.length == 0) {
-        res.json({
-            code: -1
-        });
-        return;
-    }
-    if (passwd == null || passwd.length == 0) {
-        res.json({ code: -1 });
-        return;
-    }
-    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
-    if (createdBy == null) {
-        res.json({
-            code: -1
-        });
-        return;
-    }
-    let conn;
-    try {
-        conn = yield (0, AppServer_js_1.getDBConnection)();
-        const result = yield User_js_1.default.create(conn, email, passwd, createdBy, name);
-        if (result.code < 0) {
+        const ids = yield Report_js_1.default.select(conn, status);
+        if (ids == null) {
             res.json({ code: -2 });
             return;
         }
+        const reports = [];
+        for (const id of ids) {
+            const report = yield Report_js_1.default.getCached(id, conn);
+            reports.push(report);
+        }
         res.json({
             code: 0,
-            result: result
+            authType,
+            result: reports
         });
     }
     catch (e) {
         console.error(e);
-        res.json({ code: -2 });
+        res.json({ code: -3 });
     }
     finally {
         conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
-app.post("/user/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { email, passwd } = req.body;
-    if (email == null || email.length == 0) {
+app.patch("/reports/:reportId/close", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    let { reportId } = req.params;
+    const closedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] PATCH /reports/${reportId}/close closedBy=${closedBy}`);
+    if (closedBy == null) {
         res.json({
             code: -1
-        });
-        return;
-    }
-    if (passwd == null || passwd.length == 0) {
-        res.json({
-            code: -2
         });
         return;
     }
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
-        const result = yield User_js_1.default.login(conn, email, passwd);
-        if (result.code == 0) {
-            req.session.userId = result.userId;
+        const splitted = reportId.split("-");
+        let id = 0;
+        if (splitted.length == 2) {
+            id = Number(splitted[1]);
         }
+        else {
+            id = Number(reportId);
+        }
+        const report = yield Report_js_1.default.getCached(id, conn);
+        if (report == null) {
+            res.json({ code: -2 });
+            return;
+        }
+        const result = yield report.close(closedBy, conn);
+        appServer.broadcast("reportClosed", report);
         res.json({
             code: 0,
-            result: result
+            result: {
+                id: report.id,
+                status: "CLOSED",
+                closedAt: report.closedAt,
+                closedBy: report.closedBy
+            }
         });
     }
     catch (e) {
-        res.json({
-            code: -3
-        });
+        console.error(e);
+        res.json({ code: -3 });
     }
     finally {
         conn === null || conn === void 0 ? void 0 : conn.release();
     }
 }));
-app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post("/reports", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { id } = req.params;
-    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
+    const { title, description, severity, status, latitude, longitude } = req.body;
+    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] POST /reports createdBy=${createdBy},title=${title}`);
     if (createdBy == null) {
         res.json({
             code: -1
@@ -326,14 +333,20 @@ app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
-        const result = yield User_js_1.default.remove(conn, id, createdBy);
+        const creator = yield Officer_js_1.default.getCached(createdBy, conn, appServer);
+        if (creator == null) {
+            res.json({ code: -2 });
+            return;
+        }
+        const report = yield Report_js_1.default.create(title, description, severity, latitude, longitude, status, createdBy, new Date(), null, null, conn);
+        appServer.broadcast("reportCreated", report);
         res.json({
             code: 0,
-            result: result
+            result: report
         });
     }
-    catch (ex) {
-        console.error(ex);
+    catch (e) {
+        console.error(e);
         res.json({ code: -2 });
     }
     finally {
@@ -342,8 +355,8 @@ app.delete("/user/:id", (req, res) => __awaiter(void 0, void 0, void 0, function
 }));
 app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { userId, code } = req.body;
-    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
+    const { userId, code, name, rank, regionId, affiliation } = req.body;
+    const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
     if (createdBy == null) {
         res.json({
             code: -1
@@ -353,7 +366,8 @@ app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* (
     let conn;
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
-        const result = yield Officer_js_1.default.create(conn, userId, code, createdBy, appServer);
+        const region = yield Region_js_1.default.getCached(regionId, conn);
+        const result = yield Officer_js_1.default.create(conn, userId, code, name, rank, region, affiliation, createdBy, appServer);
         res.json({
             code: 0,
             result: result
@@ -370,7 +384,7 @@ app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* (
 app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { id } = req.params;
-    const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.userId;
+    const updatedBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
     if (updatedBy == null) {
         res.json({
             code: -1
@@ -403,45 +417,64 @@ const port = getPortPrefix() + 80;
 const appServer = new AppServer_js_1.default();
 console.log("port=" + port);
 io.on("connection", (socket) => {
+    const forwarded = socket.handshake.headers["x-forwarded-for"];
+    let ipAddress;
+    if (forwarded) {
+        const ipList = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+        ipAddress = ipList.split(",")[0].trim();
+    }
+    else {
+        ipAddress = socket.handshake.address;
+    }
     const session = socket.request.session;
-    console.log(`[${(0, Utils_js_1.getDateStr)()}] Connected`);
+    console.log(`[${(0, Utils_js_1.getDateStr)()}] [io.on connection] socket.id=${socket.id},ip=${ipAddress}`);
     let officer = null;
-    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, region, role }) {
-        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join] officerId=${officerId},region=${region},role=${role}`);
-        officer = yield appServer.setOfficerJoined(officerId, region, role, socket);
+    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, role }) {
+        officer = yield appServer.setOfficerJoined(officerId, role, socket);
         if (officer == null) {
-            console.log(`[${(0, Utils_js_1.getDateStr)()}] socket.on join Failed. officerId=${officerId},region=${region},role=${role}`);
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join]  officerId=${officerId},role=${role},officer=null Rejected.`);
         }
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join] officerId=${officerId},role=${role},socket.id=${socket.id} Accepted.`);
     }));
     socket.on("sendMyLocation", ({ officerId, region, latitude, longitude }) => {
         if (officer == null) {
-            console.log(`[socket.on sendMyLocation] officer=null`);
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on sendMyLocation] socket.id=${socket.id},officer=null Rejected.`);
             socket.disconnect();
             return;
         }
         if (officer.region == null) {
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on sendMyLocation] socket.id=${socket.id},officer.code=${officer.code},officer.region=null Rejected.`);
             return;
         }
-        officer.updateLocation(latitude, longitude);
+        //console.log(`[${getDateStr()}] [socket.on sendMyLocation] socket.id=${socket.id},officer.code=${officer.code},region=${officer.region.code}`);
+        officer.setLocation(latitude, longitude);
         appServer.setOfficerLocationUpdated(officer);
     });
     socket.on("sendRadioMessage", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, region, message, timestamp }) {
         if (officer == null) {
-            console.log(`[socket.on sendRadioMessage] officer=null`);
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on sendRadioMessage] socket.id=${socket.id},officer=null Rejected.`);
             socket.disconnect();
             return;
         }
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on sendRadioMessage] socket.id=${socket.id},officer.code=${officer.code} Accepted.`);
         yield appServer.pushPendingMessage(officer, region, message, timestamp);
     }));
     socket.on("disconnect", (reason) => {
-        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on disconnect]`);
         if (officer == null) {
-            socket.disconnect();
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on disconnect] socket.id=${socket.id},officer=null`);
             return;
         }
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on disconnect] socket.id=${socket.id},officer.code=${officer.code} Accepted`);
         officer.removeSocket(socket);
     });
 });
+function getBuildTime() {
+    const stats = fs.statSync(__filename);
+    const createdDate = stats.mtime;
+    return createdDate;
+}
 httpServer.listen(port, () => {
+    startTime = new Date();
+    buildTime = getBuildTime();
     console.log(`Listening on port=${port}`);
 });

@@ -9,6 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const Utils_js_1 = require("./Utils.js");
 class Region {
     constructor(id, code) {
         this.id = id;
@@ -17,7 +18,7 @@ class Region {
     }
     addOfficer(officer) {
         this.officers.set(officer.id, officer);
-        console.log(`[addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [Region.addOfficer] code=${this.code},officer.code=${officer.code},size=${this.officers.size}`);
     }
     removeOfficer(officer) {
         this.officers.delete(officer.id);
