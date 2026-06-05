@@ -102,7 +102,7 @@ export default class AppServer{
 		}
 		this.updatedOfficers.clear();
 	}
-	async setOfficerJoined(officerCode:string,roleCode:string,socket:Socket):Promise<Officer|null>{
+	async setOfficerJoined(officerCode:string,socket:Socket):Promise<Officer|null>{
 		let conn;
 		try{
 			conn=await getDBConnection();
@@ -120,12 +120,7 @@ export default class AppServer{
 				}
 				officer.syncPeerLocation(origOfficer);
 			}
-			if(roleCode!=null){
-				const role=await Role.findByCode(roleCode,conn);
-				if(role!=null){
-					officer.setRole(role);
-				}
-			}
+			officer.setRole();
 			this.officers.set(officer.id,officer);
 			return officer;
 		}catch(e:any){

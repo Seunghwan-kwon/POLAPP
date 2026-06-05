@@ -124,7 +124,7 @@ class AppServer {
             this.updatedOfficers.clear();
         });
     }
-    setOfficerJoined(officerCode, roleCode, socket) {
+    setOfficerJoined(officerCode, socket) {
         return __awaiter(this, void 0, void 0, function* () {
             let conn;
             try {
@@ -143,12 +143,7 @@ class AppServer {
                     }
                     officer.syncPeerLocation(origOfficer);
                 }
-                if (roleCode != null) {
-                    const role = yield Role_js_1.default.findByCode(roleCode, conn);
-                    if (role != null) {
-                        officer.setRole(role);
-                    }
-                }
+                officer.setRole();
                 this.officers.set(officer.id, officer);
                 return officer;
             }

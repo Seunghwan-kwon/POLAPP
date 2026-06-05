@@ -4,6 +4,7 @@ import express,{Request,Response,Application}from"express";
 import session,{Session,SessionData}from"express-session";
 import Report from"./Report.js";
 import Region from"./Region.js";
+import Role from"./Role.js";
 import User from"./User.js";
 import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
@@ -343,10 +344,11 @@ interface CreateOfficerRequestBody{
 	name:string,
 	rank:string,
 	regionId:number,
+	roleId:number,
 	affiliation:string
 }
 app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Response)=>{
-	const{userId,code,name,rank,regionId,affiliation}=req.body;
+	const{userId,code,name,rank,regionId,roleId,affiliation}=req.body;
 	const createdBy=req.session?.officerId;
 	if(createdBy==null){
 		res.json({
@@ -358,7 +360,8 @@ app.post("/officer",async(req:Request<{},{},CreateOfficerRequestBody>,res:Respon
 	try{
 		conn=await getDBConnection();
 		const region=await Region.getCached(regionId,conn);
-		const result=await Officer.create(conn,userId,code,name,rank,region,affiliation,createdBy,appServer);
+		const role=await Role.getCached(roleId,conn);
+		const result=await Officer.create(conn,userId,code,name,rank,region,role,affiliation,createdBy,appServer);
 		res.json({
 			code:0,
 			result:result
@@ -417,12 +420,12 @@ io.on("connection",(socket:Socket)=>{
 	const session=socket.request.session;
 	console.log(`[${getDateStr()}] [io.on connection] socket.id=${socket.id},ip=${ipAddress}`);
 	let officer:Officer|null=null;
-	socket.on("join",async({officerId,role})=>{
-		officer=await appServer.setOfficerJoined(officerId,role,socket);
+	socket.on("join",async({officerId})=>{
+		officer=await appServer.setOfficerJoined(officerId,socket);
 		if(officer==null){
-			console.log(`[${getDateStr()}] [socket.on join]  officerId=${officerId},role=${role},officer=null Rejected.`);
+			console.log(`[${getDateStr()}] [socket.on join]  officerId=${officerId},officer=null Rejected.`);
 		}
-		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},role=${role},socket.id=${socket.id} Accepted.`);
+		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},socket.id=${socket.id} Accepted.`);
 	});
 	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
 		if(officer==null){

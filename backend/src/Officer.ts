@@ -60,14 +60,14 @@ export default class Officer{
 	constructor(
 		id:number,code:string,
 		name:string,rank:string,
-		region:Region|null,affiliation:string,
+		region:Region|null,role:Role|null,affiliation:string,
 		appServer:AppServer
 	){
 		this.id=id;
 		this.x=0;
 		this.y=0;
 		this.region=region;
-		this.role=null;
+		this.role=role;
 		this.code=code;
 		this.name=name;
 		this.rank=rank;
@@ -81,7 +81,7 @@ export default class Officer{
 		let officer=Officer.cached.get(id);
 		if(officer===undefined){
 			const row=await conn.selectRow<any>(
-				"select id,code,name,rank,region,affiliation from tblOfficer where id=? limit 1;",
+				"select id,code,name,rank,region,role,affiliation from tblOfficer where id=? limit 1;",
 				[id]
 			);
 			if(row==null){
@@ -92,9 +92,11 @@ export default class Officer{
 			const name=String(row[2]);
 			const rank=String(row[3]);
 			const regionId=Number(row[4]);
-			const affiliation=String(row[5]);
+			const roleId=Number(row[5]);
+			const affiliation=String(row[6]);
 			const region=await Region.getCached(regionId,conn);
-			officer=new Officer(id,code,name,rank,region,affiliation,appServer);
+			const role=await Role.getCached(roleId,conn);
+			officer=new Officer(id,code,name,rank,region,role,affiliation,appServer);
 			Officer.cached.set(id,officer);
 		}
 		return officer;
@@ -119,15 +121,16 @@ export default class Officer{
 		}
 		return officer;
 	}
-	static async create(conn:DBConnection,id:number,code:string,name:string,rank:string,region:Region|null,affiliation:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
+	static async create(conn:DBConnection,id:number,code:string,name:string,rank:string,region:Region|null,role:Role|null,affiliation:string,createdBy:number,appServer:AppServer):Promise<CreateResult>{
 		try{
 			await conn.beginTransaction();
 			const regionId=region==null?0:region.id;
+			const roleId=role==null?0:role.id;
 			const insertId=await conn.insert(
-				"insert into tblOfficer(userId,officerId,name,rank,region,affiliation,createdBy)values(?,?,?,?,?,?,?);",
+				"insert into tblOfficer(userId,officerId,name,rank,region,role,affiliation,createdBy)values(?,?,?,?,?,?,?,?);",
 				[
 					id,code,name,rank,
-					regionId,affiliation,
+					regionId,roleId,affiliation,
 					createdBy
 				]
 			);
@@ -139,7 +142,7 @@ export default class Officer{
 				);
 			}
 			await conn.commit();
-			const officer=new Officer(insertId,code,name,rank,region,affiliation,appServer);
+			const officer=new Officer(insertId,code,name,rank,region,role,affiliation,appServer);
 			Officer.cached.set(officer.id,officer);
 			return new CreateResult(0,officer);
 		}catch(err:any){
@@ -272,17 +275,13 @@ export default class Officer{
 		this.socket.emit("receiveRadioMessage",payload);
 		return 1;
 	}
-	setRole(role:Role):number{
-		if(this.role!=null){
-			if(this.role==role){
-				return 1;
-			}else{
-				this.role.removeOfficer(this);
-			}
+	setRole():number{
+		if(this.role==null){
+			console.log(`[${getDateStr()}] [Officer.setRole] this.role=null`);
+			return-1;
 		}
-		role.addOfficer(this);
-		this.role=role;
-		console.log(`[${getDateStr()}] [Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
+		this.role.addOfficer(this);
+		console.log(`[${getDateStr()}] [Officer.setRole] officer.code=${this.code} role.code=${this.role.code}`);
 		return 0;
 	}
 	setRegion():number{

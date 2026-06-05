@@ -13,6 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const Region_js_1 = __importDefault(require("./Region.js"));
+const Role_js_1 = __importDefault(require("./Role.js"));
 const Utils_js_1 = require("./Utils.js");
 var RemoveResultCode;
 (function (RemoveResultCode) {
@@ -52,12 +53,12 @@ class FindResult {
     }
 }
 class Officer {
-    constructor(id, code, name, rank, region, affiliation, appServer) {
+    constructor(id, code, name, rank, region, role, affiliation, appServer) {
         this.id = id;
         this.x = 0;
         this.y = 0;
         this.region = region;
-        this.role = null;
+        this.role = role;
         this.code = code;
         this.name = name;
         this.rank = rank;
@@ -70,7 +71,7 @@ class Officer {
         return __awaiter(this, void 0, void 0, function* () {
             let officer = Officer.cached.get(id);
             if (officer === undefined) {
-                const row = yield conn.selectRow("select id,code,name,rank,region,affiliation from tblOfficer where id=? limit 1;", [id]);
+                const row = yield conn.selectRow("select id,code,name,rank,region,role,affiliation from tblOfficer where id=? limit 1;", [id]);
                 if (row == null) {
                     Officer.cached.set(id, null);
                     return null;
@@ -79,9 +80,11 @@ class Officer {
                 const name = String(row[2]);
                 const rank = String(row[3]);
                 const regionId = Number(row[4]);
-                const affiliation = String(row[5]);
+                const roleId = Number(row[5]);
+                const affiliation = String(row[6]);
                 const region = yield Region_js_1.default.getCached(regionId, conn);
-                officer = new Officer(id, code, name, rank, region, affiliation, appServer);
+                const role = yield Role_js_1.default.getCached(roleId, conn);
+                officer = new Officer(id, code, name, rank, region, role, affiliation, appServer);
                 Officer.cached.set(id, officer);
             }
             return officer;
@@ -106,14 +109,15 @@ class Officer {
             return officer;
         });
     }
-    static create(conn, id, code, name, rank, region, affiliation, createdBy, appServer) {
+    static create(conn, id, code, name, rank, region, role, affiliation, createdBy, appServer) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 yield conn.beginTransaction();
                 const regionId = region == null ? 0 : region.id;
-                const insertId = yield conn.insert("insert into tblOfficer(userId,officerId,name,rank,region,affiliation,createdBy)values(?,?,?,?,?,?,?);", [
+                const roleId = role == null ? 0 : role.id;
+                const insertId = yield conn.insert("insert into tblOfficer(userId,officerId,name,rank,region,role,affiliation,createdBy)values(?,?,?,?,?,?,?,?);", [
                     id, code, name, rank,
-                    regionId, affiliation,
+                    regionId, roleId, affiliation,
                     createdBy
                 ]);
                 if (insertId == null) {
@@ -121,7 +125,7 @@ class Officer {
                     return new CreateResult(CreateResultCode.InsertFailed, null);
                 }
                 yield conn.commit();
-                const officer = new Officer(insertId, code, name, rank, region, affiliation, appServer);
+                const officer = new Officer(insertId, code, name, rank, region, role, affiliation, appServer);
                 Officer.cached.set(officer.id, officer);
                 return new CreateResult(0, officer);
             }
@@ -247,18 +251,13 @@ class Officer {
         this.socket.emit("receiveRadioMessage", payload);
         return 1;
     }
-    setRole(role) {
-        if (this.role != null) {
-            if (this.role == role) {
-                return 1;
-            }
-            else {
-                this.role.removeOfficer(this);
-            }
+    setRole() {
+        if (this.role == null) {
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [Officer.setRole] this.role=null`);
+            return -1;
         }
-        role.addOfficer(this);
-        this.role = role;
-        console.log(`[${(0, Utils_js_1.getDateStr)()}] [Officer.setRole] officer.code=${this.code} role.code=${role.code}`);
+        this.role.addOfficer(this);
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [Officer.setRole] officer.code=${this.code} role.code=${this.role.code}`);
         return 0;
     }
     setRegion() {

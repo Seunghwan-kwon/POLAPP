@@ -51,6 +51,7 @@ const express_1 = __importDefault(require("express"));
 const express_session_1 = __importDefault(require("express-session"));
 const Report_js_1 = __importDefault(require("./Report.js"));
 const Region_js_1 = __importDefault(require("./Region.js"));
+const Role_js_1 = __importDefault(require("./Role.js"));
 const Officer_js_1 = __importDefault(require("./Officer.js"));
 const AppServer_js_1 = __importStar(require("./AppServer.js"));
 const http = __importStar(require("node:http"));
@@ -355,7 +356,7 @@ app.post("/reports", (req, res) => __awaiter(void 0, void 0, void 0, function* (
 }));
 app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { userId, code, name, rank, regionId, affiliation } = req.body;
+    const { userId, code, name, rank, regionId, roleId, affiliation } = req.body;
     const createdBy = (_a = req.session) === null || _a === void 0 ? void 0 : _a.officerId;
     if (createdBy == null) {
         res.json({
@@ -367,7 +368,8 @@ app.post("/officer", (req, res) => __awaiter(void 0, void 0, void 0, function* (
     try {
         conn = yield (0, AppServer_js_1.getDBConnection)();
         const region = yield Region_js_1.default.getCached(regionId, conn);
-        const result = yield Officer_js_1.default.create(conn, userId, code, name, rank, region, affiliation, createdBy, appServer);
+        const role = yield Role_js_1.default.getCached(roleId, conn);
+        const result = yield Officer_js_1.default.create(conn, userId, code, name, rank, region, role, affiliation, createdBy, appServer);
         res.json({
             code: 0,
             result: result
@@ -429,12 +431,12 @@ io.on("connection", (socket) => {
     const session = socket.request.session;
     console.log(`[${(0, Utils_js_1.getDateStr)()}] [io.on connection] socket.id=${socket.id},ip=${ipAddress}`);
     let officer = null;
-    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId, role }) {
-        officer = yield appServer.setOfficerJoined(officerId, role, socket);
+    socket.on("join", (_a) => __awaiter(void 0, [_a], void 0, function* ({ officerId }) {
+        officer = yield appServer.setOfficerJoined(officerId, socket);
         if (officer == null) {
-            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join]  officerId=${officerId},role=${role},officer=null Rejected.`);
+            console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join]  officerId=${officerId},officer=null Rejected.`);
         }
-        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join] officerId=${officerId},role=${role},socket.id=${socket.id} Accepted.`);
+        console.log(`[${(0, Utils_js_1.getDateStr)()}] [socket.on join] officerId=${officerId},socket.id=${socket.id} Accepted.`);
     }));
     socket.on("sendMyLocation", ({ officerId, region, latitude, longitude }) => {
         if (officer == null) {

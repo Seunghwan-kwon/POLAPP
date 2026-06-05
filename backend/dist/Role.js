@@ -21,7 +21,7 @@ class Role {
     removeOfficer(officer) {
         this.officers.delete(officer.id);
     }
-    static getCached(id, code, conn) {
+    static getCached(id, conn) {
         return __awaiter(this, void 0, void 0, function* () {
             let role = Role.cached.get(id);
             if (role === undefined) {
@@ -44,7 +44,7 @@ class Role {
             if (id == null) {
                 return null;
             }
-            return yield Role.getCached(id, code, conn);
+            return yield Role.getCached(id, conn);
         });
     }
 }
