@@ -427,7 +427,7 @@ io.on("connection",(socket:Socket)=>{
 		}
 		console.log(`[${getDateStr()}] [socket.on join] officerId=${officerId},socket.id=${socket.id} Accepted.`);
 	});
-	socket.on("sendMyLocation",({officerId,region,latitude,longitude})=>{
+	socket.on("sendMyLocation",({/*officerId,region,*/latitude,longitude})=>{
 		if(officer==null){
 			console.log(`[${getDateStr()}] [socket.on sendMyLocation] socket.id=${socket.id},officer=null Rejected.`);
 			socket.disconnect();
@@ -441,7 +441,7 @@ io.on("connection",(socket:Socket)=>{
 		officer.setLocation(latitude,longitude);
 		appServer.setOfficerLocationUpdated(officer);
 	});
-	socket.on("sendRadioMessage",async({officerId,region,message,timestamp})=>{
+	socket.on("sendRadioMessage",async({/*officerId,*/region,message,timestamp})=>{
 		if(officer==null){
 			console.log(`[${getDateStr()}] [socket.on sendRadioMessage] socket.id=${socket.id},officer=null Rejected.`);
 			socket.disconnect();
