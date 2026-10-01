@@ -4,17 +4,14 @@ import 'package:http/http.dart' as http;
 
 import '../models/report.dart';
 import 'auth_service.dart';
+import 'server_config.dart';
 
 class MobileReportService {
   MobileReportService({
     String? baseUrl,
     http.Client? client,
   })  : _baseUrl = _normalizeBaseUrl(
-          baseUrl ??
-              const String.fromEnvironment(
-                'API_SERVER_URL',
-                defaultValue: 'https://polapp.duckdns.org:444',
-              ),
+          baseUrl ?? apiServerUrl,
         ),
         _client = client ?? http.Client();
 

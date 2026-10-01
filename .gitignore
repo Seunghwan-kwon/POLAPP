@@ -34,6 +34,22 @@ migrate_working_dir/
 /coverage/
 .env
 .env.local
+!.env.example
+
+# Python backend
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.py[cod]
+backend/**/data/*.db
+backend/**/data/*.db-*
+backend/**/evaluation_output/
+backend/**/outputs/
+
+# Local integration workspace
+.codex_staging/
+.test_deps/
 
 # Symbolication related
 app.*.symbols

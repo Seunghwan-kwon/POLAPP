@@ -17,8 +17,13 @@ dependencies:
   web: ^1.1.1
   google_fonts: ^8.1.0
   http: ^1.6.0
+  path_provider: ^2.1.5
+  record: ^6.1.2
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
+  camera: 0.12.0+2
+  image: ^4.10.1
+  onnxruntime: ^1.4.1
 
 dev_dependencies:
   flutter_test:
@@ -37,3 +42,6 @@ flutter:
   assets:
     - assets/icons/police_logo.png
     - assets/icons/siren_icon.png
+    - assets/data/nowon_safety_heatmap.json
+    - assets/models/weapon_detector_finetuned.onnx
+    - assets/models/thresholds.json

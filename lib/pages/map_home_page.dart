@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -14,10 +16,11 @@ import '../models/safety_status.dart';
 import '../services/mobile_report_service.dart';
 import '../services/police_marker_service.dart';
 import '../services/report_marker_service.dart';
+import '../services/server_config.dart';
+import 'ai_feature_page.dart';
 import 'map_bottom_panel.dart';
 import 'setting_page.dart';
 
-// GPS 수신 지연 또는 실패 시 지도가 보여줄 기본 좌표 (광운대학교)
 const NLatLng _defaultTarget = NLatLng(37.6194, 127.0598);
 
 class MapHomePage extends StatefulWidget {
@@ -40,18 +43,16 @@ class RadioMessage {
     required this.timestamp,
   });
 
-  // 서버에서 받은 JSON을 객체로 변환
   factory RadioMessage.fromJson(Map<String, dynamic> json) {
     return RadioMessage(
       officerId: json['officerId'],
-      region: json['region'] ?? 'UNKNOWN', 
+      region: json['region'] ?? 'UNKNOWN',
       message: json['message'],
       timestamp: DateTime.parse(json['timestamp']),
     );
   }
 }
 
-// 지도의 초기 카메라 시점 설정
 class _MapHomePageState extends State<MapHomePage> {
   static const NCameraPosition _initialCameraPosition = NCameraPosition(
     target: _defaultTarget,
@@ -62,27 +63,30 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _isBriefingVisible = false;
   bool _isVoiceRecognitionEnabled = false;
   bool _isRadioDialogOpen = false;
+  bool _isSafetyHeatmapVisible = false;
+  final List<NOverlayInfo> _safetyHeatmapOverlayInfos = [];
   SafetyStatus _safetyStatus = SafetyStatus.waiting;
   PoliceFacility? _selectedFacility;
   Report? _selectedReport;
 
-  OfficerProfile _officerProfile = const OfficerProfile(name: '로딩 중...', rank: '');
+  OfficerProfile _officerProfile = const OfficerProfile(
+    name: '로딩 중...',
+    rank: '',
+  );
 
-  NaverMapController? _mapController; // 네이버 지도 조작을 위한 컨트롤러 인스턴스
-  StreamSubscription<Position>? _positionStream;  // 실시간 기기 위치 업데이트를 감지하는 스트림 구독 객체
-  NMarker? _myLocationMarker; // 현재 사용자의 위치를 지도 위에 표시하는 마커
+  NaverMapController? _mapController;
+  StreamSubscription<Position>? _positionStream;
+  NMarker? _myLocationMarker;
 
-  // 웹소켓 및 동료 마커 관리를 위한 변수
-  io.Socket? _socket; // 서버와 통신할 소켓 객체
-  String _myOfficerId = ''; // 내 경찰관 ID
-  String _myRegion = ''; // 내 관할 지역
-  final Map<String, NMarker> _colleagueMarkers = {};  // 다른 경찰관들의 마커를 관리할 딕셔너리
-  final Map<String, Map<String, String>> _colleagueProfiles = {}; // 다른 경찰관들의 이름, 계급, 소속을 저장해둘 딕셔너리
+  io.Socket? _socket;
+  String _myOfficerId = '';
+  String _myRegion = '';
+  final Map<String, NMarker> _colleagueMarkers = {};
+  final Map<String, Map<String, String>> _colleagueProfiles = {};
   final PoliceMarkerService _policeMarkerService = PoliceMarkerService();
   final MobileReportService _mobileReportService = MobileReportService();
   final ReportMarkerService _reportMarkerService = ReportMarkerService();
 
-  // 메시지 내역을 저장할 리스트
   final List<RadioMessage> _radioLogs = [];
 
   @override
@@ -94,35 +98,32 @@ class _MapHomePageState extends State<MapHomePage> {
   Future<void> _initializeApp() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      // 로그인으로 저장된 정보를 로드
       _myOfficerId = prefs.getString('officerId') ?? 'UNKNOWN';
-      _myRegion = prefs.getString('officerRegion') ?? 'SEOUL_NOWON'; 
+      _myRegion = prefs.getString('officerRegion') ?? 'SEOUL_NOWON';
       final String myName = prefs.getString('officerName') ?? '이름 미상';
       final String myRank = prefs.getString('officerRank') ?? '계급 미상';
-      
+
       _officerProfile = OfficerProfile(name: myName, rank: myRank);
     });
 
     debugPrint('접속된 사번: $_myOfficerId');
 
-    _startLocationTracking(); // 화면 로딩과 동시에 백그라운드에서 기기 위치 추적 시작
-    _connectWebSocket(); // 앱 동작 시 소켓 연결
+    _startLocationTracking();
+    _connectWebSocket();
   }
 
   @override
   void dispose() {
-    _positionStream?.cancel();  // 메모리 누수 및 백그라운드 배터리 소모를 방지하기 위해 화면 종료 시 GPS 스트림 해제
+    _positionStream?.cancel();
     _socket?.disconnect();
-    _socket?.dispose();// 화면 종료 시 통신도 종료
+    _socket?.dispose();
     _policeMarkerService.dispose();
     _mobileReportService.close();
     super.dispose();
   }
 
-// 웹소켓 연결 및 이벤트 리스너 설정
   void _connectWebSocket() {
-    // 서버 주소 설정
-    final String serverUrl = const String.fromEnvironment('WS_SERVER_URL');
+    const String serverUrl = wsServerUrl;
 
     _socket = io.io(serverUrl, <String, dynamic>{
       'transports': ['websocket'],
@@ -130,13 +131,10 @@ class _MapHomePageState extends State<MapHomePage> {
       'forceNew': true,
     });
 
-    // 서버 연결 성공 시 내가 접속했다는 사실을 서버에 알림
     _socket?.onConnect((_) {
       debugPrint('WebSocket connected');
-      
-      _socket?.emit('join', {
-        'officerId': _myOfficerId,
-      });
+
+      _socket?.emit('join', {'officerId': _myOfficerId});
 
       if (_myLocationMarker != null) {
         _socket!.emit('sendMyLocation', {
@@ -148,19 +146,17 @@ class _MapHomePageState extends State<MapHomePage> {
       }
     });
 
-    // 서버 연결 실패 시 에러 로그 출력
     _socket?.onConnectError(
       (error) => debugPrint('WebSocket connect error: $error'),
     );
 
-    // 서버로부터 다른 경찰관의 위치 및 상세 데이터를 수신했을 때
     _socket?.on('updateColleagueLocation', (data) {
       final String officerId = data['officerId'].toString();
       final double lat = (data['latitude'] as num).toDouble();
       final double lng = (data['longitude'] as num).toDouble();
-      
-      // 만약 처음 보는 사번이라면 프로필 정보를 캐시에 저장 (백엔드에서 이름/계급 등을 보내줬을 때만 저장)
-      if (!_colleagueProfiles.containsKey(officerId) && data.containsKey('name')) {
+
+      if (!_colleagueProfiles.containsKey(officerId) &&
+          data.containsKey('name')) {
         _colleagueProfiles[officerId] = {
           'name': data['name'] ?? '이름 미상',
           'rank': data['rank'] ?? '계급 미상',
@@ -171,37 +167,35 @@ class _MapHomePageState extends State<MapHomePage> {
       _updateColleagueMarker(officerId, NLatLng(lat, lng));
     });
 
-    // 서버로부터 다른 경찰관의 메시지를 수신했을 때
     _socket?.on('receiveRadioMessage', (data) {
-      // 현재 맵 화면이 띄워져 있을 때만 UI 업데이트를 진행
-      if (!mounted) return; 
+      if (!mounted) return;
 
       final newMessage = RadioMessage.fromJson(data);
-      
+
       setState(() {
-        _radioLogs.insert(0, newMessage); // 최신 메시지가 위로 오게 저장
+        _radioLogs.insert(0, newMessage);
       });
 
-      // 팝업 알림 띄우기 (ScaffoldMessenger 사용)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("[${newMessage.region}] ${newMessage.officerId}: ${newMessage.message}"),
+          content: Text(
+            "[${newMessage.region}] ${newMessage.officerId}: ${newMessage.message}",
+          ),
           duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating, // 지도 위로 띄우기
-          margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20), // 위치 조정
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
         ),
       );
     });
 
-    // 서버로부터 다른 경찰관의 연결 해제(종료) 이벤트를 수신했을 때
     _socket?.on('removeColleagueLocation', (data) {
-      debugPrint('[Debug] 연결 해제 이벤트 수신함: $data'); 
-      
-      if (!mounted) return; // 화면이 닫혀있으면 무시
-      
+      debugPrint('[Debug] 연결 해제 이벤트 수신함: $data');
+
+      if (!mounted) return;
+
       try {
         final String officerId = data['officerId'].toString();
-        _removeColleagueMarker(officerId); // 마커 삭제 함수 호출
+        _removeColleagueMarker(officerId);
       } catch (e) {
         debugPrint('[Error] 퇴장 데이터 파싱 에러: $e');
       }
@@ -241,14 +235,11 @@ class _MapHomePageState extends State<MapHomePage> {
       }
     });
 
-    // 서버와 연결이 끊겼을 때
     _socket?.onDisconnect((_) => debugPrint('WebSocket disconnected'));
 
-    // 세팅 완료 후 연결 시작
     _socket?.connect();
   }
 
-  // 동료 마커를 지도에 갱신하고 클릭 이벤트를 부여하는 함수
   void _updateColleagueMarker(String officerId, NLatLng latLng) {
     if (_mapController == null || officerId == _myOfficerId) return;
 
@@ -256,7 +247,6 @@ class _MapHomePageState extends State<MapHomePage> {
       if (_colleagueMarkers.containsKey(officerId)) {
         _colleagueMarkers[officerId]!.setPosition(latLng);
       } else {
-        // 내 캐시(수첩)에서 이 사번의 프로필을 꺼내옴
         final profile = _colleagueProfiles[officerId];
         final name = profile?['name'] ?? officerId;
         final rank = profile?['rank'] ?? '';
@@ -266,7 +256,7 @@ class _MapHomePageState extends State<MapHomePage> {
           id: officerId,
           position: latLng,
           iconTintColor: Colors.blue,
-          caption: NOverlayCaption(text: name), 
+          caption: NOverlayCaption(text: name),
         );
 
         newMarker.setOnTapListener((overlay) {
@@ -283,7 +273,6 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
-  // 마커 터치 시 동료 경찰관의 상세 정보를 보여주는 하단 바텀 시트 UI
   void _showColleagueInfoBottomSheet({
     required String name,
     required String rank,
@@ -292,18 +281,22 @@ class _MapHomePageState extends State<MapHomePage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)), // 윗부분 둥글게 처리
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // 내용물 크기만큼만 시트 높이를 설정
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 '현장 경찰관 정보',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B3B6F)),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1B3B6F),
+                ),
               ),
               const SizedBox(height: 16),
               ListTile(
@@ -313,23 +306,31 @@ class _MapHomePageState extends State<MapHomePage> {
                   child: Icon(Icons.person, color: Colors.black54),
                 ),
                 title: Text(
-                  '$rank $name', // 예: 순경 홍길동
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ), 
-                subtitle: Text(affiliation), // 예: 노원경찰서 월계지구대
+                  '$rank $name',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                subtitle: Text(affiliation),
               ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context), // 닫기 버튼 누르면 시트 내리기
+                  onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF1B3B6F),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  child: const Text('확인', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    '확인',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -339,19 +340,16 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
-  // 동료 경찰관 연결 해제 시 지도에서 마커를 완전히 지우는 함수
   void _removeColleagueMarker(String officerId) {
     if (_mapController == null) return;
 
     setState(() {
       if (_colleagueMarkers.containsKey(officerId)) {
-        // 1. flutter_naver_map 패키지 스펙에 맞춰 확실하게 타겟팅하여 삭제
         final info = NOverlayInfo(type: NOverlayType.marker, id: officerId);
         _mapController!.deleteOverlay(info);
-        
-        // 2. 동료 마커 관리 딕셔너리에서 해당 ID 제거
+
         _colleagueMarkers.remove(officerId);
-        
+
         debugPrint('[Debug] 동료 마커 삭제 및 화면 갱신 완료: $officerId');
       } else {
         debugPrint('[Debug] 지우려는 마커가 목록에 없습니다: $officerId');
@@ -359,43 +357,37 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
-  // 기기의 위치 권한을 확인하고, 실시간 위치 추적을 초기화하는 메서드
   Future<void> _startLocationTracking() async {
-    // 기기 자체의 위치 서비스 활성화 여부 확인
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
 
-    // 앱의 위치 권한 상태 확인 및 거부 시 권한 요청 팝업 호출
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return;
     }
 
-    // GPS 통신 대기 시간을 줄이기 위해, OS가 마지막으로 기억하는 캐시된 위치를 먼저 불러와 지도를 즉시 이동시킴
     final Position? initialPosition = await Geolocator.getLastKnownPosition();
     if (initialPosition != null) {
       _updateMyLocationOnMap(initialPosition, isInitial: true);
     }
 
-    // 지정된 간격(5미터) 이상 이동할 때마다 지속적으로 좌표를 수신하는 스트림 활성화
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen((Position position) {
-      _updateMyLocationOnMap(position, isInitial: false);
-    });
+    _positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 5,
+          ),
+        ).listen((Position position) {
+          _updateMyLocationOnMap(position, isInitial: false);
+        });
   }
 
-  // 수신된 GPS 좌표를 바탕으로 마커를 갱신하고 카메라를 이동시키는 메서드
   void _updateMyLocationOnMap(Position position, {required bool isInitial}) {
     if (_mapController == null) return;
 
     final latLng = NLatLng(position.latitude, position.longitude);
 
-    // 마커가 맵에 없다면 새로 생성하고, 이미 존재한다면 좌표값만 갱신 (화면 깜빡임 방지)
     if (_myLocationMarker == null) {
       _myLocationMarker = NMarker(id: 'my-location', position: latLng);
       _mapController!.addOverlay(_myLocationMarker!);
@@ -403,18 +395,13 @@ class _MapHomePageState extends State<MapHomePage> {
       _myLocationMarker!.setPosition(latLng);
     }
 
-    // 카메라 이동 객체 생성
     final cameraUpdate = NCameraUpdate.withParams(target: latLng);
 
-    // 최초 위치 탐색 시에는 애니메이션 없이 즉시 카메라를 이동시키고,
-    // 이후 실시간 이동 시에는 부드럽게 추적하도록 트랜지션 효과 적용
     cameraUpdate.setAnimation(
       animation: isInitial ? NCameraAnimation.none : NCameraAnimation.easing,
-      duration:
-          isInitial ? Duration.zero : const Duration(milliseconds: 300),
+      duration: isInitial ? Duration.zero : const Duration(milliseconds: 300),
     );
 
-    // 내 위치가 지도에 갱신될 때마다 서버에 전송
     if (_socket != null && _socket!.connected) {
       _socket!.emit('sendMyLocation', {
         'officerId': _myOfficerId,
@@ -426,33 +413,31 @@ class _MapHomePageState extends State<MapHomePage> {
     _mapController!.updateCamera(cameraUpdate);
   }
 
-  // 메시지를 서버로 전송하는 함수
   void _sendRadioMessage(String text) {
-    if (text.trim().isEmpty) return; // 빈 메시지 방지
+    if (text.trim().isEmpty) return;
 
     if (_socket != null && _socket!.connected) {
       final messageData = {
         'officerId': _myOfficerId,
         'region': _myRegion,
         'message': text,
-        'timestamp': DateTime.now().toIso8601String(), // 현재 시간을 표준 문자열로 변환
+        'timestamp': DateTime.now().toIso8601String(),
       };
-      
+
       _socket!.emit('sendRadioMessage', messageData);
       debugPrint('메시지 전송 완료: $text');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('서버와 연결되어 있지 않습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('서버와 연결되어 있지 않습니다.')));
     }
   }
 
-  // 메시지 입력창을 띄우는 함수
   void _showRadioDialog() {
     setState(() {
-      _isRadioDialogOpen = true; 
+      _isRadioDialogOpen = true;
     });
-    
+
     final TextEditingController messageController = TextEditingController();
 
     showDialog(
@@ -463,7 +448,10 @@ class _MapHomePageState extends State<MapHomePage> {
             children: [
               Icon(Icons.campaign, color: Colors.blue),
               SizedBox(width: 8),
-              Text('전체 메시지 전파', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(
+                '전체 메시지 전파',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           content: TextField(
@@ -472,7 +460,7 @@ class _MapHomePageState extends State<MapHomePage> {
               hintText: '전파할 내용을 입력하세요.',
               border: OutlineInputBorder(),
             ),
-            autofocus: true, // 창이 뜨자마자 키보드 올라오게 설정
+            autofocus: true,
             maxLines: 2,
           ),
           actions: [
@@ -484,7 +472,7 @@ class _MapHomePageState extends State<MapHomePage> {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
               onPressed: () {
                 _sendRadioMessage(messageController.text);
-                Navigator.pop(context); // 전송 후 창 닫기
+                Navigator.pop(context);
               },
               child: const Text('전파하기', style: TextStyle(color: Colors.white)),
             ),
@@ -492,19 +480,16 @@ class _MapHomePageState extends State<MapHomePage> {
         );
       },
     ).then((_) {
-      // 전송, 취소, 혹은 바깥 화면 터치로 창이 닫히면 무조건 실행
       setState(() {
-        _isRadioDialogOpen = false; // 창이 닫히면 다시 하얀색으로 복구
+        _isRadioDialogOpen = false;
       });
     });
   }
 
-  // 지도를 한 단계 확대하는 외부 컨트롤 메서드
   void _zoomIn() {
     _mapController?.updateCamera(NCameraUpdate.zoomIn());
   }
 
-  // 지도를 한 단계 축소하는 외부 컨트롤 메서드
   void _zoomOut() {
     _mapController?.updateCamera(NCameraUpdate.zoomOut());
   }
@@ -516,9 +501,15 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   void _openSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const SettingPage()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const SettingPage()));
+  }
+
+  void _openAiFeatures() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const AiFeaturePage()));
   }
 
   void _toggleVoiceRecognition() {
@@ -533,7 +524,132 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
-  // 경찰서, 지구대 마커 클릭 캡슐화에 따른 호출
+  Future<void> _toggleSafetyHeatmap() async {
+    if (_isSafetyHeatmapVisible) {
+      await _removeSafetyHeatmap();
+      if (!mounted) return;
+      setState(() {
+        _isSafetyHeatmapVisible = false;
+      });
+      return;
+    }
+
+    await _showSafetyHeatmap();
+    if (!mounted) return;
+    setState(() {
+      _isSafetyHeatmapVisible = true;
+    });
+  }
+
+  Future<void> _showSafetyHeatmap() async {
+    final controller = _mapController;
+    if (controller == null) return;
+
+    await _removeSafetyHeatmap();
+
+    final raw = await rootBundle.loadString(
+      'assets/data/nowon_safety_heatmap.json',
+    );
+    final decoded = jsonDecode(raw) as Map<String, dynamic>;
+    final features = decoded['features'] as List<dynamic>? ?? const [];
+    final overlays = <NAddableOverlay>{};
+
+    for (var featureIndex = 0; featureIndex < features.length; featureIndex++) {
+      final feature = features[featureIndex] as Map<String, dynamic>;
+      final geometry = feature['geometry'] as Map<String, dynamic>? ?? const {};
+      final properties =
+          feature['properties'] as Map<String, dynamic>? ?? const {};
+      final color = _parseHeatColor(
+        properties['fill_color']?.toString() ?? '#E5E7EB',
+      );
+
+      final polygons = _extractPolygonCoordinateSets(geometry);
+      for (
+        var polygonIndex = 0;
+        polygonIndex < polygons.length;
+        polygonIndex++
+      ) {
+        final rings = polygons[polygonIndex];
+        if (rings.isEmpty || rings.first.length < 4) continue;
+
+        final overlay = NPolygonOverlay(
+          id: 'nowon-safety-$featureIndex-$polygonIndex',
+          coords: rings.first,
+          holes: rings.length > 1 ? rings.skip(1).toList() : const [],
+          color: color.withValues(alpha: 0.30),
+          outlineColor: Colors.black.withValues(alpha: 0.42),
+          outlineWidth: 1.4,
+        );
+        overlays.add(overlay);
+        _safetyHeatmapOverlayInfos.add(overlay.info);
+      }
+    }
+
+    if (overlays.isNotEmpty) {
+      await controller.addOverlayAll(overlays);
+    }
+  }
+
+  Future<void> _removeSafetyHeatmap() async {
+    final controller = _mapController;
+    if (controller == null || _safetyHeatmapOverlayInfos.isEmpty) return;
+
+    final overlayInfos = List<NOverlayInfo>.from(_safetyHeatmapOverlayInfos);
+    _safetyHeatmapOverlayInfos.clear();
+    for (final info in overlayInfos) {
+      await controller.deleteOverlay(info);
+    }
+  }
+
+  List<List<List<NLatLng>>> _extractPolygonCoordinateSets(
+    Map<String, dynamic> geometry,
+  ) {
+    final type = geometry['type']?.toString();
+    final coordinates = geometry['coordinates'];
+    if (coordinates is! List) return const [];
+
+    if (type == 'Polygon') {
+      return [_convertPolygonRings(coordinates)];
+    }
+    if (type == 'MultiPolygon') {
+      return coordinates
+          .whereType<List<dynamic>>()
+          .map(_convertPolygonRings)
+          .where((rings) => rings.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  List<List<NLatLng>> _convertPolygonRings(List<dynamic> polygon) {
+    return polygon
+        .whereType<List<dynamic>>()
+        .map(_convertRing)
+        .where((ring) => ring.length >= 4)
+        .toList();
+  }
+
+  List<NLatLng> _convertRing(List<dynamic> ring) {
+    return ring
+        .whereType<List<dynamic>>()
+        .where((point) => point.length >= 2)
+        .map(
+          (point) => NLatLng(
+            (point[1] as num).toDouble(),
+            (point[0] as num).toDouble(),
+          ),
+        )
+        .toList();
+  }
+
+  Color _parseHeatColor(String hex) {
+    final value = hex.replaceFirst('#', '');
+    if (value.length != 6) {
+      return const Color(0xFFE5E7EB);
+    }
+    return Color(int.parse('FF$value', radix: 16));
+  }
+
   Future<void> _onMapReady(NaverMapController controller) async {
     await _policeMarkerService.addPoliceFacilityMarkers(
       context: context,
@@ -541,6 +657,9 @@ class _MapHomePageState extends State<MapHomePage> {
       onFacilityTap: _onPoliceFacilityTap,
     );
     await _loadReportMarkers(controller);
+    if (_isSafetyHeatmapVisible) {
+      await _showSafetyHeatmap();
+    }
   }
 
   Future<void> _loadReportMarkers(NaverMapController controller) async {
@@ -556,13 +675,13 @@ class _MapHomePageState extends State<MapHomePage> {
     }
   }
 
-  void _updateReportMarkerSizes() {
+  Future<void> _updateReportMarkerSizes() async {
     final controller = _mapController;
     if (controller == null) return;
 
-    _reportMarkerService.updateMarkerSizes(
-      controller.nowCameraPosition.zoom,
-    );
+    final cameraPosition = await controller.getCameraPosition();
+    if (!mounted || controller != _mapController) return;
+    _reportMarkerService.updateMarkerSizes(cameraPosition.zoom);
   }
 
   void _onPoliceFacilityTap(PoliceFacility facility) {
@@ -594,11 +713,7 @@ class _MapHomePageState extends State<MapHomePage> {
     if (!_isValidNavigationTarget(report)) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('사건 위치 좌표가 올바르지 않습니다.'),
-          ),
-        );
+        ..showSnackBar(const SnackBar(content: Text('사건 위치 좌표가 올바르지 않습니다.')));
       return;
     }
 
@@ -629,9 +744,7 @@ class _MapHomePageState extends State<MapHomePage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('네이버 지도 앱을 실행할 수 없습니다. 설치 여부를 확인해 주세요.'),
-        ),
+        const SnackBar(content: Text('네이버 지도 앱을 실행할 수 없습니다. 설치 여부를 확인해 주세요.')),
       );
   }
 
@@ -650,7 +763,6 @@ class _MapHomePageState extends State<MapHomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. 최하단 배경: 네이버 지도 렌더링 영역
           Positioned.fill(
             child: NaverMap(
               options: const NaverMapViewOptions(
@@ -660,7 +772,6 @@ class _MapHomePageState extends State<MapHomePage> {
                 locationButtonEnable: true,
               ),
               onMapReady: (controller) {
-                // 맵 초기화 완료 시 컨트롤러 인스턴스 보관 및 초기 마커 설정
                 _mapController = controller;
                 _onMapReady(controller);
               },
@@ -673,8 +784,7 @@ class _MapHomePageState extends State<MapHomePage> {
               onCameraIdle: _updateReportMarkerSizes,
             ),
           ),
-          // 2. 좌측 상단: 현재 맵 로딩 상태 및 출동 상태 표시
-          // 우측 설정 버튼 및 음성 인식 On/Off 버튼
+
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -692,10 +802,11 @@ class _MapHomePageState extends State<MapHomePage> {
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color: (_isMapLoaded
-                                    ? _safetyStatus.color
-                                    : Colors.black)
-                                .withValues(alpha: 0.78),
+                            color:
+                                (_isMapLoaded
+                                        ? _safetyStatus.color
+                                        : Colors.black)
+                                    .withValues(alpha: 0.78),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Row(
@@ -763,10 +874,39 @@ class _MapHomePageState extends State<MapHomePage> {
                         FloatingActionButton.small(
                           heroTag: 'btn_radio',
                           onPressed: _showRadioDialog,
-                          backgroundColor: _isRadioDialogOpen ? Colors.blueAccent : Colors.white,
+                          backgroundColor: _isRadioDialogOpen
+                              ? Colors.blueAccent
+                              : Colors.white,
                           child: Icon(
                             Icons.campaign,
-                            color: _isRadioDialogOpen ? Colors.white : Colors.black87,
+                            color: _isRadioDialogOpen
+                                ? Colors.white
+                                : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'btn_ai_features',
+                          onPressed: _openAiFeatures,
+                          backgroundColor: Colors.white,
+                          child: const Icon(
+                            Icons.smart_toy_outlined,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FloatingActionButton.small(
+                          heroTag: 'btn_safety_heatmap',
+                          onPressed: _isMapLoaded ? _toggleSafetyHeatmap : null,
+                          backgroundColor: _isSafetyHeatmapVisible
+                              ? const Color(0xFFDC2626)
+                              : Colors.white,
+                          tooltip: '치안 히트맵',
+                          child: Icon(
+                            Icons.local_fire_department_outlined,
+                            color: _isSafetyHeatmapVisible
+                                ? Colors.white
+                                : Colors.black87,
                           ),
                         ),
                       ],
@@ -776,7 +916,7 @@ class _MapHomePageState extends State<MapHomePage> {
               ),
             ),
           ),
-          // 3. 우측 하단: 지도 줌 인/아웃 컨트롤 FAB (Floating Action Button) 영역
+
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.only(left: 16, top: 72),
@@ -798,7 +938,7 @@ class _MapHomePageState extends State<MapHomePage> {
           ),
           Positioned(
             right: 16,
-            bottom: 220,  // 하단 DraggableScrollableSheet와 겹치지 않도록 높이 확보
+            bottom: 220,
             child: Column(
               children: [
                 FloatingActionButton.small(
@@ -817,7 +957,7 @@ class _MapHomePageState extends State<MapHomePage> {
               ],
             ),
           ),
-          // 4. 최하단 패널: 드래그 가능한 주변 정보 브리핑 시트
+
           if (_isBriefingVisible)
             DraggableScrollableSheet(
               initialChildSize: 0.18,

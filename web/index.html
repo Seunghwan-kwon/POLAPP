@@ -96,6 +96,7 @@
       document.getElementById("splash-branding")?.remove();
       document.body.style.background = "transparent";
     }
+    window.addEventListener("flutter-first-frame", removeSplashFromWeb, { once: true });
   </script>
 </head>
 <body>

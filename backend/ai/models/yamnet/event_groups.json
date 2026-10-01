@@ -1,0 +1,22 @@
+{
+  "crowd": [
+    "crowd",
+    "hubbub",
+    "speech babble",
+    "children playing"
+  ],
+  "danger": [
+    "screaming",
+    "shout",
+    "yell",
+    "glass",
+    "breaking",
+    "smash, crash",
+    "slap, smack",
+    "whack, thwack",
+    "thump, thud",
+    "gunshot",
+    "gunfire",
+    "explosion"
+  ]
+}

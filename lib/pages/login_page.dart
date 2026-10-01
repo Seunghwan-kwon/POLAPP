@@ -1,8 +1,9 @@
-import 'dart:convert'; // JSON 파싱을 위해 추가
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http; // HTTP 통신 패키지 임포트
+import 'package:http/http.dart' as http;
 import 'map_home_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/server_config.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,70 +13,70 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // 컨트롤러 이름과 텍스트를 직관적으로 변경
-  final TextEditingController _officerIdController = TextEditingController(); // 사번 입력
-  final TextEditingController _matchingCodeController = TextEditingController(); // 매칭 코드 입력
-  bool _isLoading = false; // 로그인 중 로딩 상태 표시
+  final TextEditingController _officerIdController = TextEditingController();
+  final TextEditingController _matchingCodeController = TextEditingController();
+  bool _isLoading = false;
 
-  /// 사번과 매칭 코드를 백엔드로 보내 검증하고 토큰을 받아오는 함수
   void _performLogin() async {
-    if (_isLoading) return; // 이미 로딩 중이라면 터치 중복 방지
+    if (_isLoading) return;
 
     final String officerId = _officerIdController.text.trim();
     final String matchingCode = _matchingCodeController.text.trim();
 
-    // 간단한 유효성 검사 (입력칸이 비어있는지)
     if (officerId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('사번(예: P-1001)을 입력해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사번(예: P-1001)을 입력해 주세요.')));
       return;
     }
     if (matchingCode.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('발급받은 매칭 코드를 입력해 주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('발급받은 매칭 코드를 입력해 주세요.')));
       return;
     }
 
     setState(() {
-      _isLoading = true; // 로딩 시작 (화면에 인디케이터 표시)
+      _isLoading = true;
     });
 
     try {
-      final String apiUrl = 'https://polapp.duckdns.org:444/login';
+      final String apiUrl = apiEndpoint('/login');
 
       debugPrint('[Auth] 로그인 시도 - URL: $apiUrl, ID: $officerId');
 
-      // HTTP POST 요청 발송
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(<String, String>{
-          // 백엔드 요청 스펙에 맞게 데이터 전송
-          'officerId': officerId, 
-          'matchingCode': matchingCode,
-        }),
-      ).timeout(const Duration(seconds: 5)); // 5초 타임아웃 설정
+      final response = await http
+          .post(
+            Uri.parse(apiUrl),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: jsonEncode(<String, String>{
+              'officerId': officerId,
+              'matchingCode': matchingCode,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
-      // 서버 응답 확인
       if (response.statusCode == 200) {
-        // 백엔드 인증 성공
-        final dynamic data = jsonDecode(response.body);
-        final String validatedId = data['officerId'] ?? officerId; 
-        final String token = data['token'] ?? 'temp-token'; 
-        final String name = data['name'] ?? '이름 미상';
-        final String rank = data['rank'] ?? '계급 미상';
-        final String region = data['region'] ?? 'UNKNOWN_REGION';
-        final String affiliation = data['affiliation'] ?? '소속 미상';
-        final String role = data['role'] ?? 'USER';
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('로그인 응답 형식이 올바르지 않습니다.');
+        }
+        final token = decoded['token']?.toString().trim() ?? '';
+        if (token.isEmpty) {
+          throw const FormatException('로그인 응답에 인증 토큰이 없습니다.');
+        }
+        final validatedId = decoded['officerId']?.toString() ?? officerId;
+        final name = decoded['name']?.toString() ?? '이름 미상';
+        final rank = decoded['rank']?.toString() ?? '계급 미상';
+        final region = decoded['region']?.toString() ?? 'UNKNOWN_REGION';
+        final affiliation = decoded['affiliation']?.toString() ?? '소속 미상';
+        final role = decoded['role']?.toString() ?? 'USER';
 
-        // 휴대폰 내부 금고(SharedPreferences)에 인증 정보를 안전하게 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('officerId', validatedId);
-        await prefs.setString('authToken', token); 
+        await prefs.setString('authToken', token);
         await prefs.setString('officerName', name);
         await prefs.setString('officerRank', rank);
         await prefs.setString('officerRegion', region);
@@ -84,23 +85,20 @@ class _LoginPageState extends State<LoginPage> {
 
         debugPrint('[Auth] 로그인 성공! 사번: $validatedId, $rank $name');
 
-        // 성공 시 지도 화면으로 이동
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const MapHomePage()),
           );
         }
       } else {
-        // 백엔드 인증 실패 (예: 코드 불일치 등)
         debugPrint('[Auth] 로그인 실패 - 상태코드: ${response.statusCode}');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('사번 또는 코드가 일치하지 않습니다.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('사번 또는 코드가 일치하지 않습니다.')));
         }
       }
     } catch (e) {
-      // 네트워크 에러 등 예외 처리
       debugPrint('[Auth Error] 예외 발생: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,7 +106,6 @@ class _LoginPageState extends State<LoginPage> {
         );
       }
     } finally {
-      // 성공이든 실패든 로그인 시도가 끝나면 로딩 상태 해제
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -127,20 +124,17 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             children: [
               const SizedBox(height: 50),
-              // 로고 섹션
+
               Column(
                 children: [
-                  Image.asset(
-                    'assets/icons/police_logo.png', // 경찰 로고
-                    height: 180,
-                  ),
+                  Image.asset('assets/icons/police_logo.png', height: 180),
                   const SizedBox(height: 5),
                   const Text(
                     'POL APP',
                     style: TextStyle(
                       fontSize: 40,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1B3B6F), // 남색 계열
+                      color: Color(0xFF1B3B6F),
                       letterSpacing: 3,
                     ),
                   ),
@@ -155,35 +149,32 @@ class _LoginPageState extends State<LoginPage> {
                 ],
               ),
               const SizedBox(height: 60),
-              
-              // 사번(Officer ID) 입력 필드
+
               TextField(
                 controller: _officerIdController,
                 decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.badge_outlined), // 사번 느낌 아이콘
+                  prefixIcon: Icon(Icons.badge_outlined),
                   labelText: '사번',
-                  hintText: 'P-1001', // 예시 추가
+                  hintText: 'P-1001',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.visiblePassword, // 사번 형식에 맞게
+                keyboardType: TextInputType.visiblePassword,
               ),
               const SizedBox(height: 20),
-              
-              // 매칭 코드 입력 필드
+
               TextField(
                 controller: _matchingCodeController,
-                obscureText: true, // 코드 입력 시 마스킹 처리 (보안)
+                obscureText: true,
                 decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.key), // 열쇠 모양 아이콘
+                  prefixIcon: Icon(Icons.key),
                   labelText: '발급받은 코드 입력',
                   hintText: '5자리 코드 입력',
                   border: OutlineInputBorder(),
                 ),
               ),
-              
+
               const SizedBox(height: 40),
-              
-              // 로그인 버튼
+
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -197,17 +188,20 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white) // 로딩 중 표시
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
                           '접 속',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                 ),
               ),
-              
+
               const SizedBox(height: 20),
               const Text(
-                '문제 발생 시 상황실로 문의하세요.', // 안내 문구
+                '문제 발생 시 상황실로 문의하세요.',
                 style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 20),

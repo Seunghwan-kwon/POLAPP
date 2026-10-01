@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/browser_client.dart';
 
-import 'admin_dashboard_page.dart'; 
+import 'admin_dashboard_page.dart';
+import '../services/server_config.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -13,8 +14,8 @@ class AdminLoginPage extends StatefulWidget {
 }
 
 class _AdminLoginPageState extends State<AdminLoginPage> {
-  final TextEditingController _adminIdController = TextEditingController(); // 관리자 ID (사번) 입력
-  final TextEditingController _matchingCodeController = TextEditingController(); // 매칭 코드 입력
+  final TextEditingController _adminIdController = TextEditingController();
+  final TextEditingController _matchingCodeController = TextEditingController();
   bool _isLoading = false;
 
   void _performWebLogin() async {
@@ -37,30 +38,35 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     });
 
     try {
-      final String apiUrl = 'https://polapp.duckdns.org:444/login';
+      final String apiUrl = apiEndpoint('/login');
       debugPrint('[Web Auth] 로그인 시도 - ID: $adminId');
 
-      // 백엔드 /reports API는 express-session 쿠키로 사용자를 식별한다.
-      // 따라서 로그인 요청도 credentials를 포함해 보내야 브라우저가 세션 쿠키를 저장하고 이후 /reports 요청에 다시 실어 보낸다.
       final client = BrowserClient()..withCredentials = true;
-      final response = await client.post(
-        Uri.parse(apiUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(<String, String>{
-          'officerId': adminId,
-          'matchingCode': matchingCode,
-        }),
-      ).timeout(const Duration(seconds: 5));
+      final response = await client
+          .post(
+            Uri.parse(apiUrl),
+            headers: <String, String>{
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: jsonEncode(<String, String>{
+              'officerId': adminId,
+              'matchingCode': matchingCode,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
-        final dynamic data = jsonDecode(response.body);
-        final String validatedId = data['officerId'] ?? adminId;
-        final String token = data['token'] ?? 'web-temp-token';
-        final String role = data['role'] ?? 'ADMIN';
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('로그인 응답 형식이 올바르지 않습니다.');
+        }
+        final token = decoded['token']?.toString().trim() ?? '';
+        if (token.isEmpty) {
+          throw const FormatException('로그인 응답에 인증 토큰이 없습니다.');
+        }
+        final validatedId = decoded['officerId']?.toString() ?? adminId;
+        final role = decoded['role']?.toString() ?? 'ADMIN';
 
-        // 웹 브라우저 로컬 스토리지에 인증 정보 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('officerId', validatedId);
         await prefs.setString('authToken', token);
@@ -69,7 +75,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         debugPrint('[Web Auth] 로그인 성공: $validatedId');
 
         if (mounted) {
-          // 로그인 성공 시 웹 관리자 전용 대시보드로 이동
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (context) => const AdminDashboardPage()),
           );
@@ -96,7 +101,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
-        width: 400, // 웹 화면에서 스낵바가 너무 길어지지 않도록 고정폭 설정
+        width: 400,
       ),
     );
   }
@@ -104,13 +109,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6), 
+      backgroundColor: const Color(0xFFF3F4F6),
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Container(
-              // PC 화면에서 레이아웃이 깨지지 않도록 가로 길이를 제한한 핵심 카드 컨테이너
               width: 460,
               padding: const EdgeInsets.all(40.0),
               decoration: BoxDecoration(
@@ -128,13 +132,9 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 상단 헤더 (로고 가로 배치로 웹 스타일 폰트 밸런스 유지)
                   Row(
                     children: [
-                      Image.asset(
-                        'assets/icons/police_logo.png', // 경찰 로고
-                        height: 110,
-                      ),
+                      Image.asset('assets/icons/police_logo.png', height: 110),
                       const SizedBox(width: 16),
                       const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,17 +150,14 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                           ),
                           Text(
                             '종합 상황실 시스템',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey,
-                            ),
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                         ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 40),
-                  
+
                   const Text(
                     '시스템 로그인',
                     style: TextStyle(
@@ -176,7 +173,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   ),
                   const SizedBox(height: 32),
 
-                  // 사번 입력 필드
                   const Text(
                     '관리자 사번 (ID)',
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
@@ -188,13 +184,15 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       prefixIcon: Icon(Icons.account_box_outlined),
                       hintText: 'ADMIN-001',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 12,
+                      ),
                     ),
-                    onSubmitted: (_) => _performWebLogin(), // 엔터키 지원
+                    onSubmitted: (_) => _performWebLogin(),
                   ),
                   const SizedBox(height: 24),
 
-                  // 매칭 코드 입력 필드
                   const Text(
                     '매칭 코드 (PIN)',
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
@@ -207,13 +205,15 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                       prefixIcon: Icon(Icons.lock_outline),
                       hintText: '발급된 보안 코드 입력',
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 12,
+                      ),
                     ),
-                    onSubmitted: (_) => _performWebLogin(), // 엔터키 지원
+                    onSubmitted: (_) => _performWebLogin(),
                   ),
                   const SizedBox(height: 40),
 
-                  // 접속 버튼
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -238,18 +238,24 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                             )
                           : const Text(
                               '시스템 접속',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
-                  // 하단 안내 영역
+
                   const Center(
                     child: Text(
                       '본 시스템은 보안 구역으로 승인되지 않은 접근을 엄격히 금합니다.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],

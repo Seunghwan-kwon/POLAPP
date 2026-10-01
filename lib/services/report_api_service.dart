@@ -4,31 +4,24 @@ import 'package:http/browser_client.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/report.dart';
+import 'server_config.dart';
 
-// 백엔드 /reports API는 로그인 세션 쿠키를 기준으로 권한을 확인한다.
-// Flutter Web에서는 withCredentials를 켜야 브라우저가 세션 쿠키를 함께 보낸다.
 class ReportApiService {
-  ReportApiService({
-    String? baseUrl,
-    BrowserClient? client,
-  })  : _baseUrl = _normalizeBaseUrl(
-          baseUrl ??
-              const String.fromEnvironment('API_SERVER_URL',
-                  defaultValue: String.fromEnvironment(
-                    'WS_SERVER_URL',
-                    defaultValue: 'https://polapp.duckdns.org:444',
-                  )),
-        ),
-        _client = client ?? (BrowserClient()..withCredentials = true);
+  ReportApiService({String? baseUrl, BrowserClient? client})
+    : _baseUrl = _normalizeBaseUrl(baseUrl ?? apiServerUrl),
+      _client = client ?? (BrowserClient()..withCredentials = true);
 
   final String _baseUrl;
   final BrowserClient _client;
 
   Future<List<Report>> fetchReports({String status = 'ALL'}) async {
-    final uri = Uri.parse('$_baseUrl/reports').replace(
-      queryParameters: {'status': status},
-    );
-    final response = await _client.get(uri).onError<http.ClientException>((error, stackTrace) {
+    final uri = Uri.parse(
+      '$_baseUrl/reports',
+    ).replace(queryParameters: {'status': status});
+    final response = await _client.get(uri).onError<http.ClientException>((
+      error,
+      stackTrace,
+    ) {
       throw const ReportApiException(
         '브라우저가 사건 목록 요청을 차단했습니다. 백엔드 CORS/세션 쿠키 설정을 확인해야 합니다.',
       );
@@ -53,23 +46,23 @@ class ReportApiService {
     required double latitude,
     required double longitude,
   }) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/reports'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'title': title,
-        'description': description,
-        'severity': severity,
-        'latitude': latitude,
-        'longitude': longitude,
-      }),
-    ).onError<http.ClientException>((error, stackTrace) {
-      // 브라우저에서 "Failed to fetch"가 발생하면 대개 서버 CORS 설정이 쿠키 포함 요청을 막은 것이다.
-      // 백엔드는 Access-Control-Allow-Credentials: true와 적절한 SameSite/Secure 쿠키 설정이 필요하다.
-      throw const ReportApiException(
-        '브라우저가 사건 생성 요청을 차단했습니다. 백엔드 CORS/세션 쿠키 설정을 확인해야 합니다.',
-      );
-    });
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/reports'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'title': title,
+            'description': description,
+            'severity': severity,
+            'latitude': latitude,
+            'longitude': longitude,
+          }),
+        )
+        .onError<http.ClientException>((error, stackTrace) {
+          throw const ReportApiException(
+            '브라우저가 사건 생성 요청을 차단했습니다. 백엔드 CORS/세션 쿠키 설정을 확인해야 합니다.',
+          );
+        });
 
     final result = _decodeResult(response.body);
     if (result is! Map) {
@@ -85,10 +78,10 @@ class ReportApiService {
     final response = await _client
         .patch(Uri.parse('$_baseUrl/reports/$reportId/close'))
         .onError<http.ClientException>((error, stackTrace) {
-      throw const ReportApiException(
-        '브라우저가 사건 종료 요청을 차단했습니다. 백엔드 CORS/세션 쿠키 설정을 확인해야 합니다.',
-      );
-    });
+          throw const ReportApiException(
+            '브라우저가 사건 종료 요청을 차단했습니다. 백엔드 CORS/세션 쿠키 설정을 확인해야 합니다.',
+          );
+        });
     _decodeResult(response.body);
   }
 
@@ -110,8 +103,6 @@ class ReportApiService {
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
-  // 현재 백엔드 커밋의 GET 조회 경로에는 latitude/longitude가 뒤집혀 반환될 수 있는 코드가 있다.
-  // 위도 범위를 벗어난 값이 오면 프론트에서 한 번 보정해 지도 밖으로 마커가 사라지는 것을 막는다.
   static Report _fixSuspiciousCoordinates(Report report) {
     final latitudeLooksWrong = report.lat.abs() > 90;
     final longitudeLooksLikeLatitude = report.lng.abs() <= 90;

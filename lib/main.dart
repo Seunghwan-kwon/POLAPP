@@ -1,17 +1,24 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:flutter/foundation.dart'; // kIsWeb을 사용하기 위해 추가
+
+import 'services/app_alert_service.dart';
 
 import 'pages/platform_home_page_mobile.dart'
     if (dart.library.js_interop) 'pages/platform_home_page_web.dart';
 
-const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID'); // 네이버 맵 앱 전용 클라이언트 ID
+const String _naverMapClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 모바일 기기에서만 네이버 지도 모바일 SDK를 초기화
   if (!kIsWeb) {
+    if (_naverMapClientId.isEmpty) {
+      throw StateError(
+        'NAVER_MAP_CLIENT_ID가 필요합니다. '
+        '--dart-define=NAVER_MAP_CLIENT_ID=... 로 실행하세요.',
+      );
+    }
     await FlutterNaverMap().init(
       clientId: _naverMapClientId,
       onAuthFailed: (ex) {
@@ -29,15 +36,14 @@ class PolApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: appScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       title: 'POL APP',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00C73C)),
         useMaterial3: true,
       ),
-      // 접속 환경에 따라 앱 또는 웹 페이지 출력
-      // 웹 접속 : 관리자 '로그인' 페이지 (AdminLoginPage)
-      // 앱 접속 : 앱 진입 페이지 (AppEntryPage)
       home: buildPlatformHomePage(),
     );
   }

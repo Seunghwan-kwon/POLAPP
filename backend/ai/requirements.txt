@@ -1,0 +1,10 @@
+faster-whisper==1.2.1
+ctranslate2==3.24.0
+numpy==2.4.3
+rapidfuzz==3.14.3
+onnxruntime==1.24.3
+tokenizers==0.22.2
+google-genai==1.70.0
+openai==2.30.0
+pypdf==6.9.2
+python-dotenv==1.1.1

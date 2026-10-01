@@ -1,4 +1,4 @@
-# Collaboration Guide
+# 협업 가이드
 
 ## Branch Strategy
 
