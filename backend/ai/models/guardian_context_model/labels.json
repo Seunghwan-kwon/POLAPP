@@ -1,0 +1,16 @@
+{
+  "id2label": {
+    "0": "Clean Dialogue",
+    "1": "Serious Threats",
+    "2": "Extortion or Blackmail",
+    "3": "Harassment in Workplace",
+    "4": "Other Harassment"
+  },
+  "label_codes": [
+    "000001",
+    "020121",
+    "02051",
+    "020811",
+    "020819"
+  ]
+}

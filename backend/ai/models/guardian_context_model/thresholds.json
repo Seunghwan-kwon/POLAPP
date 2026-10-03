@@ -1,0 +1,4 @@
+{
+  "context_threat_threshold": 0.5,
+  "note": "calibrate on POLAPP field validation set"
+}

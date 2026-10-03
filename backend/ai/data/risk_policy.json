@@ -1,0 +1,40 @@
+{
+  "algorithm": "k_guardian_audio_evidence_v1",
+  "category_severity": {
+    "physical_threat": 88,
+    "weapon": 96,
+    "assault": 84,
+    "drunken_disturbance": 58,
+    "emergency_help": 74,
+    "profanity": 45
+  },
+  "acoustic_thresholds": {
+    "baseline_min_windows": 3,
+    "high_voice_min_db_rise": 9.0,
+    "high_voice_min_activation_rise": 11.0,
+    "high_voice_signal_threshold": 72.0
+  },
+  "levels": {
+    "1": {
+      "label": "일반 대응",
+      "guidance": ["현장 상황을 계속 관찰하고 기본 안전 수칙을 유지하세요."]
+    },
+    "2": {
+      "label": "주의",
+      "guidance": ["대상자와 안전거리를 확보하고 주변 위험 요소를 재확인하세요.", "단독 대응 중이면 지원 요청 가능성을 검토하세요."]
+    },
+    "3": {
+      "label": "고위험",
+      "guidance": ["즉시 안전거리를 확대하고 가용 지원 인력을 요청하세요.", "엄폐물과 시민 대피 경로를 확인하세요."]
+    },
+    "4": {
+      "label": "긴급",
+      "guidance": ["생명·신체 보호를 우선하고 즉시 긴급 지원을 요청하세요.", "현장 지휘 체계와 기관 지침에 따라 대응하세요."]
+    }
+  },
+  "limitations": [
+    "위험 레벨은 음향 기반 의사결정 보조 정보이며 폭력 발생 확률이 아닙니다.",
+    "카메라 기반 거리·흉기·접촉 여부는 현재 판정하지 않습니다.",
+    "최종 판단과 조치는 현장 경찰관 및 지휘 체계가 수행해야 합니다."
+  ]
+}

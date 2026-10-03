@@ -1,0 +1,295 @@
+{
+  "dataset": "KCDD official train/dev/test split",
+  "base_model": "klue/roberta-small",
+  "seeds": [
+    13,
+    42,
+    77
+  ],
+  "runs": [
+    {
+      "seed": 13,
+      "loss": 0.5118707418441772,
+      "accuracy": 0.8768539325842697,
+      "macro_precision": 0.8773098507118446,
+      "macro_recall": 0.877148726157732,
+      "macro_f1": 0.877132832918589,
+      "runtime": 6.6909,
+      "samples_per_second": 332.543,
+      "steps_per_second": 5.231,
+      "classification_report": {
+        "Clean Dialogue": {
+          "precision": 0.8533604887983707,
+          "recall": 0.8765690376569037,
+          "f1-score": 0.8648090815273478,
+          "support": 478.0
+        },
+        "Serious Threats": {
+          "precision": 0.8906976744186047,
+          "recall": 0.8824884792626728,
+          "f1-score": 0.8865740740740741,
+          "support": 434.0
+        },
+        "Extortion or Blackmail": {
+          "precision": 0.8801955990220048,
+          "recall": 0.8977556109725686,
+          "f1-score": 0.8888888888888888,
+          "support": 401.0
+        },
+        "Harassment in Workplace": {
+          "precision": 0.922566371681416,
+          "recall": 0.8948497854077253,
+          "f1-score": 0.9084967320261438,
+          "support": 466.0
+        },
+        "Other Harassment": {
+          "precision": 0.8397291196388262,
+          "recall": 0.8340807174887892,
+          "f1-score": 0.8368953880764904,
+          "support": 446.0
+        },
+        "accuracy": 0.8768539325842697,
+        "macro avg": {
+          "precision": 0.8773098507118446,
+          "recall": 0.877148726157732,
+          "f1-score": 0.877132832918589,
+          "support": 2225.0
+        },
+        "weighted avg": {
+          "precision": 0.8772416431971127,
+          "recall": 0.8768539325842697,
+          "f1-score": 0.8769488331545899,
+          "support": 2225.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          419,
+          7,
+          13,
+          12,
+          27
+        ],
+        [
+          5,
+          383,
+          13,
+          8,
+          25
+        ],
+        [
+          14,
+          11,
+          360,
+          7,
+          9
+        ],
+        [
+          28,
+          5,
+          6,
+          417,
+          10
+        ],
+        [
+          25,
+          24,
+          17,
+          8,
+          372
+        ]
+      ]
+    },
+    {
+      "seed": 42,
+      "loss": 0.527925968170166,
+      "accuracy": 0.8710112359550561,
+      "macro_precision": 0.8705844178995491,
+      "macro_recall": 0.8715311825336682,
+      "macro_f1": 0.8709756785445821,
+      "runtime": 6.5754,
+      "samples_per_second": 338.385,
+      "steps_per_second": 5.323,
+      "classification_report": {
+        "Clean Dialogue": {
+          "precision": 0.8636363636363636,
+          "recall": 0.8347280334728033,
+          "f1-score": 0.8489361702127659,
+          "support": 478.0
+        },
+        "Serious Threats": {
+          "precision": 0.8843537414965986,
+          "recall": 0.8986175115207373,
+          "f1-score": 0.8914285714285715,
+          "support": 434.0
+        },
+        "Extortion or Blackmail": {
+          "precision": 0.8634146341463415,
+          "recall": 0.8827930174563591,
+          "f1-score": 0.872996300863132,
+          "support": 401.0
+        },
+        "Harassment in Workplace": {
+          "precision": 0.9141630901287554,
+          "recall": 0.9141630901287554,
+          "f1-score": 0.9141630901287554,
+          "support": 466.0
+        },
+        "Other Harassment": {
+          "precision": 0.827354260089686,
+          "recall": 0.827354260089686,
+          "f1-score": 0.827354260089686,
+          "support": 446.0
+        },
+        "accuracy": 0.8710112359550561,
+        "macro avg": {
+          "precision": 0.8705844178995491,
+          "recall": 0.8715311825336682,
+          "f1-score": 0.8709756785445821,
+          "support": 2225.0
+        },
+        "weighted avg": {
+          "precision": 0.8709469545709612,
+          "recall": 0.8710112359550561,
+          "f1-score": 0.8708957330372216,
+          "support": 2225.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          399,
+          6,
+          22,
+          19,
+          32
+        ],
+        [
+          5,
+          390,
+          14,
+          4,
+          21
+        ],
+        [
+          12,
+          11,
+          354,
+          9,
+          15
+        ],
+        [
+          19,
+          8,
+          4,
+          426,
+          9
+        ],
+        [
+          27,
+          26,
+          16,
+          8,
+          369
+        ]
+      ]
+    },
+    {
+      "seed": 77,
+      "loss": 0.5485638976097107,
+      "accuracy": 0.8692134831460674,
+      "macro_precision": 0.869144916584567,
+      "macro_recall": 0.8693174129003275,
+      "macro_f1": 0.869144897760983,
+      "runtime": 6.695,
+      "samples_per_second": 332.336,
+      "steps_per_second": 5.228,
+      "classification_report": {
+        "Clean Dialogue": {
+          "precision": 0.8442622950819673,
+          "recall": 0.8619246861924686,
+          "f1-score": 0.8530020703933747,
+          "support": 478.0
+        },
+        "Serious Threats": {
+          "precision": 0.8917050691244239,
+          "recall": 0.8917050691244239,
+          "f1-score": 0.8917050691244239,
+          "support": 434.0
+        },
+        "Extortion or Blackmail": {
+          "precision": 0.8651960784313726,
+          "recall": 0.8802992518703242,
+          "f1-score": 0.8726823238566132,
+          "support": 401.0
+        },
+        "Harassment in Workplace": {
+          "precision": 0.9096774193548387,
+          "recall": 0.907725321888412,
+          "f1-score": 0.9087003222341569,
+          "support": 466.0
+        },
+        "Other Harassment": {
+          "precision": 0.8348837209302326,
+          "recall": 0.804932735426009,
+          "f1-score": 0.819634703196347,
+          "support": 446.0
+        },
+        "accuracy": 0.8692134831460674,
+        "macro avg": {
+          "precision": 0.869144916584567,
+          "recall": 0.8693174129003275,
+          "f1-score": 0.869144897760983,
+          "support": 2225.0
+        },
+        "weighted avg": {
+          "precision": 0.8691095826761345,
+          "recall": 0.8692134831460674,
+          "f1-score": 0.8690750693488641,
+          "support": 2225.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          412,
+          3,
+          14,
+          18,
+          31
+        ],
+        [
+          7,
+          387,
+          13,
+          7,
+          20
+        ],
+        [
+          17,
+          15,
+          353,
+          7,
+          9
+        ],
+        [
+          19,
+          5,
+          8,
+          423,
+          11
+        ],
+        [
+          33,
+          24,
+          20,
+          10,
+          359
+        ]
+      ]
+    }
+  ],
+  "test_macro_f1_mean": 0.8724178030747181,
+  "test_macro_f1_std": 0.0034167791257112556,
+  "test_accuracy_mean": 0.8723595505617977,
+  "test_accuracy_std": 0.003261654090947928,
+  "selected_seed": 13
+}

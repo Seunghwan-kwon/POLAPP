@@ -14,13 +14,34 @@ dependencies:
   flutter_naver_map: ^1.4.4
   geolocator: ^14.0.2
   socket_io_client: ^3.1.4
+  web: ^1.1.1
+  google_fonts: ^8.1.0
+  http: ^1.6.0
+  path_provider: ^2.1.5
+  record: ^6.1.2
+  shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+  camera: 0.12.0+2
+  image: ^4.10.1
+  onnxruntime: ^1.4.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/icons/POL_APP_LOGO.png
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
   assets:
     - assets/icons/police_logo.png
+    - assets/icons/siren_icon.png
+    - assets/data/nowon_safety_heatmap.json
+    - assets/models/weapon_detector_finetuned.onnx
+    - assets/models/thresholds.json
