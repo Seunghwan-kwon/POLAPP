@@ -54,6 +54,7 @@ const Region_js_1 = __importDefault(require("./Region.js"));
 const Role_js_1 = __importDefault(require("./Role.js"));
 const Officer_js_1 = __importDefault(require("./Officer.js"));
 const AppServer_js_1 = __importStar(require("./AppServer.js"));
+const AiIntegration_js_1 = require("./AiIntegration.js");
 const http = __importStar(require("node:http"));
 const fs = __importStar(require("node:fs"));
 //import*as readline from"node:readline";
@@ -417,6 +418,7 @@ app.delete("/officer/:id", (req, res) => __awaiter(void 0, void 0, void 0, funct
 }));
 const port = getPortPrefix() + 80;
 const appServer = new AppServer_js_1.default();
+(0, AiIntegration_js_1.registerAiIntegration)({ app, appServer, getJwtSecret });
 console.log("port=" + port);
 io.on("connection", (socket) => {
     const forwarded = socket.handshake.headers["x-forwarded-for"];

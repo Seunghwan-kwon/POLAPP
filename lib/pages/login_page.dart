@@ -71,7 +71,9 @@ class _LoginPageState extends State<LoginPage> {
         final name = decoded['name']?.toString() ?? '이름 미상';
         final rank = decoded['rank']?.toString() ?? '계급 미상';
         final region = decoded['region']?.toString() ?? 'UNKNOWN_REGION';
-        final affiliation = decoded['affiliation']?.toString() ?? '소속 미상';
+        final affiliation =
+            (decoded['affiliation'] ?? decoded['affiliaton'])?.toString() ??
+            '소속 미상';
         final role = decoded['role']?.toString() ?? 'USER';
 
         final prefs = await SharedPreferences.getInstance();

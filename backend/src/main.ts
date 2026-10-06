@@ -9,6 +9,7 @@ import User from"./User.js";
 import Officer from"./Officer.js";
 import AppServer,{getDBConnection}from"./AppServer.js";
 import PendingMessage from"./PendingMessage.js";
+import{registerAiIntegration}from"./AiIntegration.js";
 import*as http from"node:http";
 import*as fs from"node:fs";
 //import*as readline from"node:readline";
@@ -407,6 +408,7 @@ app.delete("/officer/:id",async(req:Request<DeleteOfficerParams>,res:Response)=>
 });
 const port=getPortPrefix()+80;
 const appServer=new AppServer();
+registerAiIntegration({app,appServer,getJwtSecret});
 console.log("port="+port);
 io.on("connection",(socket:Socket)=>{
 	const forwarded=socket.handshake.headers["x-forwarded-for"];

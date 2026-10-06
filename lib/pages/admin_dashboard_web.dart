@@ -190,7 +190,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       if (element != null) {
         timer.cancel();
         _initializeNaverMap(div);
-        _connectWebSocket();
+        unawaited(_connectWebSocket());
       }
     });
   }
@@ -333,7 +333,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
   }
 
-  void _connectWebSocket() {
+  Future<void> _connectWebSocket() async {
+    final prefs = await SharedPreferences.getInstance();
+    final officerId = prefs.getString('officerId')?.trim() ?? '';
+    if (officerId.isEmpty) {
+      debugPrint('[Debug] 로그인한 관리자 정보가 없어 웹소켓 연결을 생략함');
+      return;
+    }
     const String serverUrl = wsServerUrl;
     debugPrint('[Debug] 서버 연결 시도 주소: $serverUrl');
 
@@ -345,7 +351,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     _socket?.onConnect((_) {
       debugPrint('[Debug] 웹소켓 연결 성공! (세션 ID: ${_socket?.id})');
 
-      _socket?.emit('join', {'officerId': 'ADMIN-001', 'role': 'ADMIN'});
+      _socket?.emit('join', {'officerId': officerId});
       debugPrint('[Debug] Join 이벤트 전송 완료 (Role: ADMIN)');
     });
 

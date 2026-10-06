@@ -50,24 +50,21 @@ class CameraStreamService {
       throw const CameraStreamException('로그인 정보가 없어 관리자 화면에 연결할 수 없습니다.');
     }
 
-    final request =
-        http.MultipartRequest(
-            'POST',
-            Uri.parse(apiEndpoint('/camera-stream/frame')),
-          )
-          ..headers['Authorization'] = 'Bearer $token'
-          ..fields['sessionId'] = sessionId
-          ..fields['detections'] = jsonEncode(detections)
-          ..files.add(
-            http.MultipartFile.fromBytes(
-              'frame',
-              jpegBytes,
-              filename: 'camera-frame.jpg',
-            ),
-          );
-
+    final uri = Uri.parse(apiEndpoint('/camera-stream/frame')).replace(
+      queryParameters: {
+        'sessionId': sessionId,
+        'detections': jsonEncode(detections),
+      },
+    );
     final response = await _client
-        .send(request)
+        .post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'image/jpeg',
+          },
+          body: jpegBytes,
+        )
         .timeout(const Duration(seconds: 5));
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw const CameraStreamException('로그인이 만료되었습니다. 다시 로그인해 주세요.');
