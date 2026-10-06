@@ -1,5 +1,5 @@
 faster-whisper==1.2.1
-ctranslate2==3.24.0
+ctranslate2==4.8.2
 numpy==2.4.3
 rapidfuzz==3.14.3
 onnxruntime==1.24.3
