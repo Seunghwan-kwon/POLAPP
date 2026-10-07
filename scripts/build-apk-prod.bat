@@ -1,0 +1,1 @@
+flutter build apk --dart-define=NAVER_MAP_CLIENT_ID=9nh2znn5h7 --dart-define=API_SERVER_URL=https://polapp.duckdns.org --dart-define=WS_SERVER_URL=https://polapp.duckdns.org --dart-define=AI_SERVER_URL=https://polapp.duckdns.org:48765 --dart-define=NAVER_MAP_WEB_CLIENT_ID=f3kher89un
