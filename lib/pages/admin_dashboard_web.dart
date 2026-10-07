@@ -15,6 +15,39 @@ import '../services/admin_threat_alert_service.dart';
 import '../services/admin_camera_stream_service.dart';
 import '../services/server_config.dart';
 
+// 경찰관 위치 정보를 담는 클래스. 서버에서 받아오는 데이터와 지도에 표시할 때 필요한 데이터를 함께 관리
+class _OfficerLocationInfo {
+  const _OfficerLocationInfo({
+    required this.officerId,
+    required this.lat,
+    required this.lng,
+    this.name,
+    this.rank,
+    this.affiliation,
+    this.region,
+  });
+
+  final String officerId;
+  final double lat;
+  final double lng;
+  final String? name;
+  final String? rank;
+  final String? affiliation;
+  final String? region;
+
+  String get displayName => _fallback(name, officerId);
+  String get displayRank => _fallback(rank, '');
+  String get displayAffiliation => _fallback(affiliation, '소속 미상');
+
+  // null 또는 빈 문자열을 받아서, 공백을 제거한 후에도 내용이 없으면 대체값을 반환하는 헬퍼 함수
+  static String _fallback(String? value, String fallback) { 
+    final normalized = value?.trim();
+    return normalized == null || normalized.isEmpty ? fallback : normalized;
+  }
+}
+
+// 사건 마커는 지도에 표시되는 JS 객체이고, 상세 내용은 Dart 상태로 따로 보관
+
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
 
@@ -23,7 +56,9 @@ class AdminDashboardPage extends StatefulWidget {
 }
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
-  final String _viewId = 'naver-map-web-view';
+  final Map<String, _OfficerLocationInfo> _officerInfos = {}; // 경찰관 ID를 Key로, 위치 및 상세 정보를 담은 _OfficerLocationInfo 객체를 Value로 저장하는 딕셔너리
+  String? _selectedOfficerId; // 지도에서 클릭하여 상세 정보를 보고 싶은 경찰관의 ID를 저장하는 상태 변수
+  final String _viewId = 'naver-map-web-view'; // HtmlElementView와 실제 생성할 HTML div 요소를 연결해주는 고유 식별자(ID)
   io.Socket? _socket;
   final Map<String, js.JSObject> _officerMarkers = {};
   final Set<String> _connectedRegions = {};
@@ -377,9 +412,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           regionName = regionCode;
         }
 
+        // 파싱된 데이터를 기반으로 _OfficerLocationInfo 객체 생성
+        final officerInfo = _OfficerLocationInfo( 
+          officerId: officerId,
+          lat: lat,
+          lng: lng,
+          name: data['name']?.toString(),
+          rank: data['rank']?.toString(),
+          affiliation: data['affiliation']?.toString(),
+          region: regionName ?? regionCode,
+        );
+        // 파싱된 데이터를 기반으로 자바스크립트 지도 위에 마커를 투영하는 함수 호출
         _updateOfficerMarkerJS(officerId, lat, lng);
 
         setState(() {
+          _officerInfos[officerId] = officerInfo; //  경찰관 ID를 키로, 위치 및 상세 정보를 담은 객체를 값으로 저장
           if (regionName != null) {
             _officerRegions[officerId] = regionName;
             _connectedRegions.add(regionName);
@@ -520,7 +567,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
 
     final maps = naver['maps'] as js.JSObject;
-
+    final event = maps['Event'] as js.JSObject;
+    
+    // JS 문법의 [ new naver.maps.LatLng(lat, lng) ] 객체 생성을 상호운용성(Interop) 타입 변환(.toJS)을 통해 실행
     final position = maps.callMethod('LatLng'.toJS, lat.toJS, lng.toJS);
 
     if (_officerMarkers.containsKey(officerId)) {
@@ -538,8 +587,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       }.jsify();
 
       final markerConstructor = maps['Marker'] as js.JSFunction;
-      final newMarker = markerConstructor.callAsConstructor(
-        markerOptions as js.JSAny,
+      final newMarker = markerConstructor.callAsConstructor(markerOptions as js.JSAny);
+      final markerClickHandler = (() {  // 마커 클릭 시 해당 경찰관의 상세 정보를 우측 패널에 표시하는 이벤트 핸들러
+        if (!mounted) return;
+        setState(() {
+          _selectedOfficerId = officerId;
+        });
+      }).toJS;
+
+      _mapEventHandlers.add(markerClickHandler);
+      event.callMethod(
+        'addListener'.toJS,
+        newMarker,
+        'click'.toJS,
+        markerClickHandler,
       );
 
       _officerMarkers[officerId] = newMarker as js.JSObject;
@@ -774,8 +835,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
       setState(() {
         _officerMarkers.remove(officerId);
+        _officerInfos.remove(officerId);
         _officerRegions.remove(officerId);
-
+        if (_selectedOfficerId == officerId) {
+          _selectedOfficerId = null;
+        }
+        
+        // 현재 남아있는 다른 경찰관들의 지역 정보로 채널 목록을 동적 새로고침
         _connectedRegions.clear();
         _connectedRegions.addAll(_officerRegions.values);
       });
@@ -1102,6 +1168,111 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  // 지도에서 특정 경찰관 마커를 클릭했을 때 우측에 나타나는 패널을 구성하는 함수
+  Widget _buildOfficerInfoPanel(_OfficerLocationInfo officer) {
+    final displayTitle = [
+      officer.displayRank,
+      officer.displayName,
+    ].where((part) => part.trim().isNotEmpty).join(' ');
+
+    return Material(
+      elevation: 12,
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        width: 360,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '현장 경찰관 정보',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1B3B6F),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: '닫기',
+                  onPressed: () {
+                    setState(() {
+                      _selectedOfficerId = null;
+                    });
+                  },
+                  icon: const Icon(Icons.close, size: 20),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const CircleAvatar(
+                  backgroundColor: Color(0xFFE5E7EB),
+                  child: Icon(Icons.person, color: Colors.black54),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayTitle.isEmpty ? officer.officerId : displayTitle,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        officer.displayAffiliation,
+                        style: const TextStyle(color: Color(0xFF4B5563)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            _buildReportInfoRow(
+              icon: Icons.badge_outlined,
+              label: '사번',
+              value: officer.officerId,
+            ),
+            const SizedBox(height: 10),
+            _buildReportInfoRow(
+              icon: Icons.place,
+              label: '위치',
+              value: '${officer.lat.toStringAsFixed(6)}, ${officer.lng.toStringAsFixed(6)}',
+            ),
+            if (officer.region != null && officer.region!.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _buildReportInfoRow(
+                icon: Icons.map_outlined,
+                label: '지역',
+                value: officer.region!,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // DateTime 객체를 'YYYY-MM-DD HH:MM' 형식의 문자열로 변환하는 함수
   String _formatReportTime(DateTime time) {
     String twoDigits(int value) => value.toString().padLeft(2, '0');
 
@@ -2520,9 +2691,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final reportDetailWidth = (MediaQuery.of(context).size.width * 0.46)
-        .clamp(360.0, 720.0)
-        .toDouble();
+    // 화면 크기에 따라 사건 상세 패널의 너비를 유동적으로 조절하되, 최소 360px에서 최대 720px 사이로 제한
+    final reportDetailWidth =
+        (MediaQuery.of(context).size.width * 0.46).clamp(360.0, 720.0).toDouble();
+    final selectedOfficerInfo = _selectedOfficerId == null
+        ? null
+        : _officerInfos[_selectedOfficerId!];
 
     return Scaffold(
       appBar: AppBar(
@@ -2629,6 +2803,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               right: 24,
               bottom: 24,
               child: _buildReportDetailPanel(reportDetailWidth),
+            ),
+            // 선택된 경찰관이 있을 때만 해당 경찰관의 상세 정보를 화면 하단에 패널로 표시 (모바일에서는 화면 우측이 아닌 하단에 나타나도록 조정)
+            if (selectedOfficerInfo != null)
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 28,
+              child: Center(
+                child: _buildOfficerInfoPanel(selectedOfficerInfo),
+              ),
             ),
           if (_isReportListOpen)
             Positioned(
